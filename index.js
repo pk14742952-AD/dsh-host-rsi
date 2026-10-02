@@ -22,7 +22,28 @@ import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
 // Config defaults; users override via the bundle row config (cordis.patch.yml).
-export const Config = {
+// Safely read a (possibly proxied) ctx service property without triggering cordis'
+// "cannot get property X without inject" proxy trap. Optional chaining (?.) does NOT
+// guard against proxy get-trap throws, so every ctx.<service> access must go through here.
+// This keeps the plugin compatible with any DSH version regardless of which services exist.
+function safeGet(obj, ...props) {
+  try {
+    let val = obj;
+    for (const p of props) {
+      if (val == null) return undefined;
+      val = val[p];
+    }
+    return val;
+  } catch {
+    return undefined;
+  }
+}
+
+// Config defaults; users override via the bundle row config (cordis.patch.yml).
+// NOT exported: cordis resolveConfig() calls runtime.Config["~standard"].validate() which
+// crashes on a plain object. By not exporting, resolveConfig sees !runtime.Config and
+// returns the config as-is (no validation). This matches billion-context's pattern.
+const Config = {
   defaults: {
     enabled: true, // global master switch (false = full no-op)
     dir: 'E:\\DSH\\.rsi-memory',
@@ -129,15 +150,16 @@ export function apply(ctx, config = {}) {
 
   // Resolve a followup method (critic escalation), guarded.
   const followup = (p) => {
-    if (ctx?.agent?.followup) return ctx.agent.followup(p);
-    if (ctx?.followup) return ctx.followup(p);
+    const fn = safeGet(ctx, 'agent', 'followup') ?? safeGet(ctx, 'followup');
+    if (fn) return fn(p);
     return undefined;
   };
-  const hasFollowup = !!(ctx?.agent?.followup ?? ctx?.followup);
+  const hasFollowup = !!(safeGet(ctx, 'agent', 'followup') ?? safeGet(ctx, 'followup'));
 
   // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
-  if (ctx?.systemPrompt?.section) {
-    const d = ctx.systemPrompt.section({ key: 'rsi-selfcheck', text: buildSelfCheckInstruction() });
+  const systemPrompt = safeGet(ctx, 'systemPrompt');
+  if (systemPrompt?.section) {
+    const d = systemPrompt.section({ key: 'rsi-selfcheck', text: buildSelfCheckInstruction() });
     if (typeof d === 'function') disposers.push(d);
   }
 
@@ -153,10 +175,10 @@ export function apply(ctx, config = {}) {
           s.lastTask = task;
           const block = store.search(task, cfg.inject); // in-memory, budget-capped
           if (block) {
-            const agent = event?.agent ?? ctx?.agent;
+            const agent = event?.agent ?? safeGet(ctx, 'agent');
             if (agent?.inject) agent.inject(block);
-            else if (ctx?.systemPrompt?.section) {
-              const d = ctx.systemPrompt.section({ key: `rsi-inject-${key}`, text: block });
+            else if (systemPrompt?.section) {
+              const d = systemPrompt.section({ key: `rsi-inject-${key}`, text: block });
               if (typeof d === 'function') disposers.push(d);
             }
           }
@@ -208,8 +230,9 @@ export function apply(ctx, config = {}) {
   }
 
   // (5) Optional forced deep-verify tool (user requests it explicitly).
-  if (ctx?.tools?.register) {
-    const d = ctx.tools.register({
+  const tools = safeGet(ctx, 'tools');
+  if (tools?.register) {
+    const d = tools.register({
       name: 'rsi_verify',
       description: 'Force an independent critic round to re-check the current answer (deep-verify).',
       run: async (event) => {
@@ -230,7 +253,7 @@ export function apply(ctx, config = {}) {
 
     // (6) Status + records tools -> let the user (or model) read live plugin state and get the
     //     dashboard URL. Read-only, cheap (in-memory snapshot; no capture-side effect).
-    const sd = ctx.tools.register({
+    const sd = tools.register({
       name: 'rsi_status',
       description: 'Show DSH-host-RSI status: enabled/degraded, lesson totals (trusted/quarantined/trajectories), layer breakdown, recent records, and the live dashboard URL.',
       run: async () => {
@@ -243,7 +266,7 @@ export function apply(ctx, config = {}) {
       },
     });
     if (typeof sd === 'function') disposers.push(sd);
-    const rd = ctx.tools.register({
+    const rd = tools.register({
       name: 'rsi_records',
       description: 'List recent RSI memory records (lessons). Args: { limit?, trustedOnly?, domain? }. Newest first.',
       run: async (event) => {

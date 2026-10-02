@@ -3,21 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { apply, Config } from '../index.js';
+import { apply } from '../index.js';
 
-test('Config.defaults carries the optimization knobs', () => {
-  assert.equal(Config.defaults.enabled, true);
-  assert.ok(typeof Config.defaults.flushMs === 'number' && Config.defaults.flushMs > 0);
-  assert.equal(Config.defaults.inject.enabled, true);
-  assert.equal(Config.defaults.capture.enabled, true);
+test('Config is not exported - cordis resolveConfig would crash on a plain object', async () => {
+  const mod = await import('../index.js');
+  assert.equal('Config' in mod, false);
+  assert.equal(typeof mod.apply, 'function');
 });
 
 test('apply() with a minimal/unknown ctx never throws and returns a cleanup', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-idx-'));
-  // A ctx missing every documented host API -> all hooks no-op safely (max compatibility).
   const cleanup = apply({ someUnknownCtx: true }, { enabled: true, dir, flushMs: 500 });
   assert.equal(typeof cleanup, 'function');
-  cleanup(); // store.close() flush; must not throw
+  cleanup();
 });
 
 test('apply() with enabled=false is a full no-op (data dir untouched)', () => {

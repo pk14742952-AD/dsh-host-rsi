@@ -7,13 +7,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 test('client registers a settings.plugins.tab "rsi" entry + component renders against __RSI__', async () => {
+  const pkg = JSON.parse(await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../package.json', import.meta.url), 'utf8')));
   let capturedSpec = null;
   globalThis.window = globalThis; // client.js is a browser IIFE
   globalThis.__ModuleLoader__ = { load: (spec) => { capturedSpec = spec; } };
   await import('../client.js');
 
   assert.ok(capturedSpec, 'client.js called window.__ModuleLoader__.load');
-  assert.equal(capturedSpec.id, 'dsh-host-rsi');
+  assert.equal(capturedSpec.id, pkg.name);
   assert.equal(typeof capturedSpec.factory, 'function');
 
   // The factory builds the module with a require() that the DSH client loader provides.

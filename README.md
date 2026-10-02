@@ -1,8 +1,11 @@
 # DSH HOST RSI记忆
 
-针对**本地大模型**（如 Qwen3.8-27B）的**每次使用持续自进化**，以 DSH **宿主插件**形式实现。
+**给本地大模型做的 DSH 宿主插件，目前主要面向 Qwen3.8-27B 这类本地 27B 模型。**
+针对本地大模型的**每次使用持续自进化**，以 DSH **宿主插件**形式实现。
 每次使用：模型先"反问式"自检（counter-reason）自己的答案；**可信**教训被保存并在下次注入；
 便宜方法没解决时，深度批评轮**自动**升级。通用模式：无需针对特定任务的评分器。
+
+仓库地址：<https://github.com/pk14742952-AD/dsh-host-rsi>
 
 > **想理解技术原理、或在自己环境复刻？** 读 [PRINCIPLES.md](./PRINCIPLES.md)
 > （专用文档：信号阶梯 / 反思循环 / 触发与效率 / 索引机制 / 与 AREX-2 的对应 / 复刻清单，逐点标注源码行号）。
@@ -89,8 +92,20 @@ E:\DSH\.rsi-memory\      # 数据目录（人可读的权威源）
 
 ## 安装（在 DSH 中）
 
-宿主专用 bundle。用插件管理器对 `dsh-host-rsi/` 执行 `plugin_manager install_bundle`
-（或 `@deepseek-ai/dsh-mcp-client` 安装路径）。无构建步骤。
+宿主专用 bundle。从 GitHub 安装：
+
+```bash
+dsh plugin --profile web add github:pk14742952-AD/dsh-host-rsi
+```
+
+发布到 npm 后也可以直接安装：
+
+```bash
+dsh plugin --profile web add dsh-host-rsi
+```
+
+也可以用插件管理器对本地目录 `dsh-host-rsi/` 执行 `plugin_manager install_bundle`。
+安装后重启 DSH 即可生效，无构建步骤。
 
 ## 首启验证
 

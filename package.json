@@ -1,7 +1,7 @@
 {
-  "name": "@local/dsh-host-rsi",
+  "name": "dsh-host-rsi",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -15,7 +15,20 @@
     "memory",
     "local-llm"
   ],
-  "description": "DSH host RSI: per-use continual self-improvement for a local LLM. Reliability-weighted signal ladder + model self-interrogation; automatic critic escalation; inverted-index memory retrieval.",
+  "description": "DSH host RSI for local LLMs (currently tuned for Qwen3.8 27B): per-use continual self-improvement, counter-reason self-check, critic escalation, and inverted-index memory retrieval.",
+  "author": "pk14742952-AD <192967623+pk14742952-AD@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pk14742952-AD/dsh-host-rsi.git"
+  },
+  "homepage": "https://github.com/pk14742952-AD/dsh-host-rsi#readme",
+  "bugs": {
+    "url": "https://github.com/pk14742952-AD/dsh-host-rsi/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
   "icon": "./icon.svg",
   "exports": {
     ".": "./index.js",

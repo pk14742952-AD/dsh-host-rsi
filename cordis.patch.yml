@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-host-rsi
-      name: '@local/dsh-host-rsi'
+      name: 'dsh-host-rsi'
       config:
         enabled: true            # 总开关；false 时插件完全空操作
         dir: "E:\\DSH\\.rsi-memory"

@@ -1,11 +1,11 @@
-// DSH host RSI — browser client half (bili-style). Registers a "RSI 记忆" tab in DSH's
-// Settings → 插件 (settings.plugins.tab list-slot) that shows LIVE plugin runtime state:
-//   插件是否启用(启用中/已停用/仅内存) · 可信/隔离/轨迹/总数 · 最近记录 · "打开仪表板" 按钮。
+// DSH host RSI \u2014 browser client half (bili-style). Registers a "RSI \u8bb0\u5fc6" tab in DSH's
+// Settings \u2192 \u63d2\u4ef6 (settings.plugins.tab list-slot) that shows LIVE plugin runtime state:
+//   \u63d2\u4ef6\u662f\u5426\u542f\u7528(\u542f\u7528\u4e2d/\u5df2\u505c\u7528/\u4ec5\u5185\u5b58) \u00b7 \u53ef\u4fe1/\u9694\u79bb/\u8f68\u8ff9/\u603b\u6570 \u00b7 \u6700\u8fd1\u8bb0\u5f55 \u00b7 "\u6253\u5f00\u4eea\u8868\u677f" \u6309\u94ae\u3002
 // It reads window.__RSI__ (host-injected via webserver/index-inject) and live-fetches the
 // SAME-ORIGIN /rsi/status.json route (registered by the host bundle on DSH's webserver),
-// so there is no CORS. The "打开仪表板" button opens the standalone loopback dashboard
+// so there is no CORS. The "\u6253\u5f00\u4eea\u8868\u677f" button opens the standalone loopback dashboard
 // (window.__RSI__.url) in a new tab. Fully guarded: if __RSI__ is absent it shows a
-// "未接入" hint instead of throwing.
+// "\u672a\u63a5\u5165" hint instead of throwing.
 
 window.__ModuleLoader__.load({
   id: "dsh-host-rsi",
@@ -21,27 +21,27 @@ window.__ModuleLoader__.load({
     var NS = "rsi";
     var POLL_MS = 3000;
     var zh = {
-      "nav": "DSH HOST RSI记忆",
-      "title": "DSH HOST RSI记忆 · 运行状态",
-      "open": "打开仪表板",
-      "hint": "查看插件是否生效、记住的教训与最近记录（只有可信教训才会被注入模型）。",
-      "loading": "加载实时状态…",
-      "enabled": "启用中（正常）",
-      "disabled": "已停用",
-      "memoryOnly": "启用中 · 仅内存",
-      "degraded": "当前 dsh 进程未接入 RSI 仪表板——先启用插件，或单独打开独立仪表板。",
-      "none": "暂无记录"
+      "nav": "DSH HOST RSI\u8bb0\u5fc6",
+      "title": "DSH HOST RSI\u8bb0\u5fc6 \u00b7 \u8fd0\u884c\u72b6\u6001",
+      "open": "\u6253\u5f00\u4eea\u8868\u677f",
+      "hint": "\u67e5\u770b\u63d2\u4ef6\u662f\u5426\u751f\u6548\u3001\u8bb0\u4f4f\u7684\u6559\u8bad\u4e0e\u6700\u8fd1\u8bb0\u5f55\uff08\u53ea\u6709\u53ef\u4fe1\u6559\u8bad\u624d\u4f1a\u88ab\u6ce8\u5165\u6a21\u578b\uff09\u3002",
+      "loading": "\u52a0\u8f7d\u5b9e\u65f6\u72b6\u6001\u2026",
+      "enabled": "\u542f\u7528\u4e2d\uff08\u6b63\u5e38\uff09",
+      "disabled": "\u5df2\u505c\u7528",
+      "memoryOnly": "\u542f\u7528\u4e2d \u00b7 \u4ec5\u5185\u5b58",
+      "degraded": "\u5f53\u524d dsh \u8fdb\u7a0b\u672a\u63a5\u5165 RSI \u4eea\u8868\u677f\u2014\u2014\u5148\u542f\u7528\u63d2\u4ef6\uff0c\u6216\u5355\u72ec\u6253\u5f00\u72ec\u7acb\u4eea\u8868\u677f\u3002",
+      "none": "\u6682\u65e0\u8bb0\u5f55"
     };
     var en = {
       "nav": "DSH HOST RSI",
-      "title": "DSH HOST RSI · runtime status",
+      "title": "DSH HOST RSI \u00b7 runtime status",
       "open": "Open dashboard",
       "hint": "See whether the plugin is in effect, its trusted lessons and recent records (only trusted lessons are injected).",
-      "loading": "Loading live status…",
+      "loading": "Loading live status\u2026",
       "enabled": "Enabled (normal)",
       "disabled": "Disabled",
-      "memoryOnly": "Enabled · in-memory only",
-      "degraded": "This dsh process is not bound to the RSI dashboard — enable the plugin first, or open the standalone dashboard.",
+      "memoryOnly": "Enabled \u00b7 in-memory only",
+      "degraded": "This dsh process is not bound to the RSI dashboard \u2014 enable the plugin first, or open the standalone dashboard.",
       "none": "No records yet"
     };
     function readGlobal() { return globalThis.__RSI__; }
@@ -82,17 +82,17 @@ window.__ModuleLoader__.load({
         createElement("div", { style: { fontWeight: 600, fontSize: 14 } }, t("title")),
         createElement("div", { style: { opacity: 0.7, margin: "2px 0 8px" } }, t("hint")),
         createElement("div", { style: { margin: "6px 0" } },
-          createElement("span", { style: { opacity: 0.7 } }, "插件状态："),
+          createElement("span", { style: { opacity: 0.7 } }, "\u63d2\u4ef6\u72b6\u6001\uff1a"),
           createElement("span", { style: { fontWeight: 600, color: s && s.enabled !== false && !s.degraded ? "#4ade80" : (s && s.enabled === false ? "#f87171" : "#facc15") } }, stateLabel)
         ),
         s ? createElement("div", { style: { margin: "4px 0" } },
-          "可信教训 ", s.totals.trusted, " · 隔离(待证实) ", s.totals.quarantined, " · 轨迹 ", s.totals.trajectories, " · 总数 ", s.totals.lessons
+          "\u53ef\u4fe1\u6559\u8bad ", s.totals.trusted, " \u00b7 \u9694\u79bb(\u5f85\u8bc1\u5b9e) ", s.totals.quarantined, " \u00b7 \u8f68\u8ff9 ", s.totals.trajectories, " \u00b7 \u603b\u6570 ", s.totals.lessons
         ) : null,
         recs.length
           ? createElement("ul", { style: { margin: "8px 0", paddingLeft: 18 } }, recs.map(function (r, i) {
             return createElement("li", { key: i, style: { margin: "3px 0" } },
-              createElement("span", { style: { opacity: 0.7 } }, r.domain || "general"), " · ",
-              r.summary, r.fix ? createElement("span", { style: { opacity: 0.7 } }, "（纠正：" + r.fix + "）") : null);
+              createElement("span", { style: { opacity: 0.7 } }, r.domain || "general"), " \u00b7 ",
+              r.summary, r.fix ? createElement("span", { style: { opacity: 0.7 } }, "\uff08\u7ea0\u6b63\uff1a" + r.fix + "\uff09") : null);
           }))
           : createElement("div", { style: { opacity: 0.6, margin: "4px 0" } }, t("none")),
         createElement("button", {
