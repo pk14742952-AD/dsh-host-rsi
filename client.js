@@ -1,5 +1,5 @@
-// DSH host RSI \u2014 browser client half (bili-style). Registers a "RSI \u8bb0\u5fc6" tab in DSH's
-// Settings \u2192 \u63d2\u4ef6 (settings.plugins.tab list-slot) that shows LIVE plugin runtime state:
+// DSH host RSI \u2014 browser client half (bili-style). Registers a standalone "RSI \u8bb0\u5fc6"
+// settings section (settings.section), matching how billion-context surfaces its own view:
 //   \u63d2\u4ef6\u662f\u5426\u542f\u7528(\u542f\u7528\u4e2d/\u5df2\u505c\u7528/\u4ec5\u5185\u5b58) \u00b7 \u53ef\u4fe1/\u9694\u79bb/\u8f68\u8ff9/\u603b\u6570 \u00b7 \u6700\u8fd1\u8bb0\u5f55 \u00b7 "\u6253\u5f00\u4eea\u8868\u677f" \u6309\u94ae\u3002
 // It reads window.__RSI__ (host-injected via webserver/index-inject) and live-fetches the
 // SAME-ORIGIN /rsi/status.json route (registered by the host bundle on DSH's webserver),
@@ -102,12 +102,13 @@ window.__ModuleLoader__.load({
         (!g || !g.url) ? createElement("div", { style: { opacity: 0.6, marginTop: 6 } }, t("degraded")) : null
       );
     }
-    ctx.slots.inject("settings.plugins.tab", function () {
+    ctx.slots.inject("settings.section", function () {
       return ctx.slots.register({
-        name: "settings.plugins.tab",
+        name: "settings.section",
         id: "rsi",
-        order: 30,
-        label: function () { return t("nav"); }
+        order: 60,
+        label: function () { return t("nav"); },
+        locale: NS
       }, RsiSettingsTab);
     });
     }

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('client registers a settings.plugins.tab "rsi" entry + component renders against __RSI__', async () => {
+test('client registers a settings.section "rsi" entry + component renders against __RSI__', async () => {
   const pkg = JSON.parse(await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../package.json', import.meta.url), 'utf8')));
   let capturedSpec = null;
   globalThis.window = globalThis; // client.js is a browser IIFE
@@ -26,7 +26,7 @@ test('client registers a settings.plugins.tab "rsi" entry + component renders ag
   const mod = capturedSpec.factory((name) => (name === 'react' ? mockReact : {}));
   assert.deepEqual(mod.inject, ['slots', 'locale']);
 
-  // Capture the settings.plugins.tab registration.
+  // Capture the settings.section registration.
   let injectedName = null;
   let registeredOpts = null;
   let registeredComp = null;
@@ -48,10 +48,10 @@ test('client registers a settings.plugins.tab "rsi" entry + component renders ag
   };
   mod.apply(ctx);
 
-  assert.equal(injectedName, 'settings.plugins.tab', 'the tab is injected into the plugins list-slot');
+  assert.equal(injectedName, 'settings.section', 'the tab is injected into the settings section');
   assert.ok(registeredOpts, 'a tab row was registered');
   assert.equal(registeredOpts.id, 'rsi');
-  assert.equal(registeredOpts.name, 'settings.plugins.tab');
+  assert.equal(registeredOpts.name, 'settings.section');
   assert.equal(typeof registeredOpts.label, 'function');
   assert.equal(typeof registeredOpts.label(), 'string', 'label resolves to a locale string');
 
