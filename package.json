@@ -1,0 +1,47 @@
+{
+  "name": "@local/dsh-host-rsi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "host-plugin",
+    "rsi",
+    "self-improvement",
+    "continual-learning",
+    "arex2",
+    "memory",
+    "local-llm"
+  ],
+  "description": "DSH host RSI: per-use continual self-improvement for a local LLM. Reliability-weighted signal ladder + model self-interrogation; automatic critic escalation; inverted-index memory retrieval.",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/**/*.js",
+    "locale/*.json",
+    "config.default.json",
+    "cordis.patch.yml",
+    "README.md",
+    "PRINCIPLES.md",
+    "LICENSE",
+    "demo-serve.mjs",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  }
+}

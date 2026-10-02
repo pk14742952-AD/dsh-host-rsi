@@ -1,0 +1,11 @@
+- insert:
+    - id: dsh-host-rsi
+      name: '@local/dsh-host-rsi'
+      config:
+        enabled: true            # 总开关；false 时插件完全空操作
+        dir: "E:\\DSH\\.rsi-memory"
+        flushMs: 500            # 后台写入防抖间隔（ms）
+        dashboard: { enabled: true, host: "127.0.0.1", port: 0, recent: 15, webserver: true }   # 环回仪表板("打开仪表板"目标) + DSH 同源 /rsi 路由(设置页实时拉取)；port 0=随机，webserver=false 只留环回
+        inject: { topK: 4, tokenBudget: 1500, candCap: 40, enabled: true }
+        capture: { enabled: true, maxPerSession: 20, minChars: 200, dedupeThreshold: 0.8 }
+        escalate: { enabled: true, maxCriticsPerSession: 4, selfConsistency: 1, threshold: 0.6 }

@@ -1,0 +1,9 @@
+# Normalize text line endings for cross-platform (GitHub) — keep the repo consistent on LF
+* text=auto
+
+# Pin these to LF regardless of OS
+*.js text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.mjs text eol=lf

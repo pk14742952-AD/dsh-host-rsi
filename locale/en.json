@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH host RSI",
+    "description": "Per-use self-evolution for a local LLM: captures trusted lessons in the background and auto-injects them on similar tasks."
+  }
+}

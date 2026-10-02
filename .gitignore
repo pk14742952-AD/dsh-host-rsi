@@ -1,0 +1,13 @@
+# dependencies
+node_modules/
+
+# local demo data (created by demo-serve.mjs / RSI_DEMO_DIR)
+.rsi-demo-data/
+
+# local RSI memory store (if a developer points RSI_DIR at the project)
+.rsi-memory/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.log

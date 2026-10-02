@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- DSH host RSI: a self-reinforcing loop with an upward step -->
+  <g fill="none" stroke="#4f8cff" stroke-width="4" stroke-linecap="round">
+    <path d="M40 16 A20 20 0 1 0 52 40" />
+    <polyline points="40,8 40,24 56,24" />
+  </g>
+  <circle cx="32" cy="32" r="6" fill="#4f8cff" />
+  <path d="M32 44 L32 56 M28 52 L32 56 L36 52" fill="none" stroke="#7cf0c0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
