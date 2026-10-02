@@ -2,23 +2,31 @@
   "$comment": "DSH host RSI 配置默认值（bundle 行配置可覆盖）。dir 为人可读的记忆目录（权威源 + 倒排索引）。enabled=false 时插件完全空操作；flushMs 为后台写入的防抖间隔（ms）。",
   "enabled": true,
   "dir": "E:\\DSH\\.rsi-memory",
-  "flushMs": 500,
+  "flushMs": 1000,
   "inject": {
-    "topK": 4,
-    "tokenBudget": 1500,
+    "topK": 3,
+    "tokenBudget": 1000,
     "candCap": 40,
     "enabled": true,
-    "includeQuarantined": false
+    "includeQuarantined": false,
+    "oncePerTask": false,
+    "maxInjectsPerTask": 2,
+    "reinjectOn": [
+      "tool-failure",
+      "repeated-failure"
+    ],
+    "compactTopK": 1,
+    "compactTokenBudget": 300
   },
   "capture": {
     "enabled": true,
-    "maxPerSession": 20,
-    "minChars": 200,
+    "maxPerSession": 10,
+    "minChars": 300,
     "dedupeThreshold": 0.8
   },
   "escalate": {
     "enabled": true,
-    "maxCriticsPerSession": 4,
+    "maxCriticsPerSession": 3,
     "selfConsistency": 1,
     "threshold": 0.6
   },

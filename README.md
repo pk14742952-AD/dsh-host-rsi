@@ -2,7 +2,7 @@
 
 # DSH HOST RSI记忆
 
-**给本地大模型做的 DSH 宿主插件，目前主要面向 Qwen3.8-27B 这类本地 27B 模型。**
+**给本地大模型做的 DSH 宿主插件，目前主要面向 Qwen3.8-27B 这类本地 27B 模型，并兼容 Qwen3.8 Flash 等本地模型。**
 针对本地大模型的**每次使用持续自进化**，以 DSH **宿主插件**形式实现。
 每次使用：模型先"反问式"自检（counter-reason）自己的答案；**可信**教训被保存并在下次注入；
 便宜方法没解决时，深度批评轮**自动**升级。通用模式：无需针对特定任务的评分器。
@@ -92,7 +92,19 @@ E:\DSH\.rsi-memory\      # 数据目录（人可读的权威源）
   trajectories/*.jsonl   # 原始轨迹（供日后 LoRA 蒸馏）
 ```
 
-## 安装（在 DSH 中）
+## 一键部署 / DSH 安装教程
+
+### 本地快速体验（不需要 DSH）
+
+```bash
+git clone https://github.com/pk14742952-AD/dsh-host-rsi
+cd dsh-host-rsi
+node demo-serve.mjs
+```
+
+然后用浏览器打开控制台输出的回环地址，就能看到仪表板和示例记忆。
+
+### 在 DSH 中安装
 
 宿主专用 bundle。从 GitHub 安装：
 
@@ -106,8 +118,14 @@ dsh plugin --profile web add github:pk14742952-AD/dsh-host-rsi
 dsh plugin --profile web add dsh-host-rsi
 ```
 
-也可以用插件管理器对本地目录 `dsh-host-rsi/` 执行 `plugin_manager install_bundle`。
-安装后重启 DSH 即可生效，无构建步骤。
+也可以用 DSH 插件管理器对本地目录 `dsh-host-rsi/` 执行 `plugin_manager install_bundle`。
+安装完成后重启 DSH 即可生效，没有构建步骤。
+
+### 模型适配
+
+插件是模型无关的宿主侧逻辑，不依赖具体模型参数量。默认配置按本地 27B 模型调低
+token 预算；Qwen3.8 Flash 等轻量模型同样可运行，只需适当降低
+`inject.topK` / `inject.tokenBudget`。
 
 ## 首启验证
 
@@ -127,7 +145,7 @@ node --test          # 纯逻辑 + 数据层套件（自动发现 test/*.test.js
 
 见 `config.default.json`：
 - `enabled`（总开关，false=完全空操作）、`dir`（数据目录）、`flushMs`（后台写入防抖 ms）；
-- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined}`；
+- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`；
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold}`；
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`；
 - `embeddings`（预留，默认 null；规模大了可换成嵌入近邻）。

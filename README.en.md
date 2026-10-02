@@ -2,7 +2,7 @@
 
 # DSH HOST RSI Memory
 
-**A DSH host plugin built for local LLMs, currently aimed primarily at local 27B models like Qwen3.8-27B.**
+**A DSH host plugin built for local LLMs, currently aimed primarily at local 27B models like Qwen3.8-27B, and compatible with local models such as Qwen3.8 Flash.**
 It is a DSH **host plugin** that gives the model **continual self-improvement on every use**.
 Each run starts with a counter-reasoning self-check: the model interrogates its own answer before committing.
 **Trusted lessons are saved and injected into the next run.** If the cheap method does not resolve the issue,
@@ -107,7 +107,19 @@ E:\DSH\.rsi-memory\     # data directory (human-readable source of truth)
   trajectories/*.jsonl   # raw trajectories (for future LoRA distillation)
 ```
 
-## Install (in DSH)
+## Quick Start / DSH Install Tutorial
+
+### Local quick demo (no DSH required)
+
+```bash
+git clone https://github.com/pk14742952-AD/dsh-host-rsi
+cd dsh-host-rsi
+node demo-serve.mjs
+```
+
+Open the loopback URL printed in the console to see the dashboard with sample memory.
+
+### Install in DSH
 
 Host-specific bundle. Install from GitHub:
 
@@ -123,6 +135,11 @@ dsh plugin --profile web add dsh-host-rsi
 
 Or use the plugin manager to `install_bundle` from the local `dsh-host-rsi/` directory. Restart DSH after
 installation; no build step is needed.
+
+### Model compatibility
+
+The plugin is model-agnostic host logic. Defaults are conservative for local 27B models; lightweight local
+models such as Qwen3.8 Flash also work. Lower `inject.topK` and `inject.tokenBudget` if needed.
 
 ## First-Run Verification
 
@@ -143,7 +160,7 @@ node --test          # pure logic + data-layer suite (auto-discovers test/*.test
 
 See `config.default.json`:
 - `enabled` (master switch; false = fully no-op), `dir` (data directory), `flushMs` (background debounce ms);
-- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined}`;
+- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`;
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold}`;
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
 - `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).

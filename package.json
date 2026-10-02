@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "memory",
     "local-llm"
   ],
-  "description": "DSH host RSI for local LLMs (currently tuned for Qwen3.8 27B): per-use continual self-improvement, counter-reason self-check, critic escalation, and inverted-index memory retrieval.",
+  "description": "DSH host RSI for local LLMs (Qwen3.8 27B, compatible with Qwen3.8 Flash): per-use continual self-improvement, counter-reason self-check, critic escalation, and inverted-index memory retrieval.",
   "author": "pk14742952-AD <192967623+pk14742952-AD@users.noreply.github.com>",
   "repository": {
     "type": "git",

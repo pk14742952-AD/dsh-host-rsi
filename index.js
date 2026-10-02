@@ -17,7 +17,7 @@
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext } from './lib/capture.js';
-import { shouldCapture, shouldEscalate, criticBudgetOk } from './lib/policy.js';
+import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk } from './lib/policy.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -47,10 +47,23 @@ const Config = {
   defaults: {
     enabled: true, // global master switch (false = full no-op)
     dir: 'E:\\DSH\\.rsi-memory',
-    flushMs: 500, // background write debounce
-    inject: { topK: 4, tokenBudget: 1500, candCap: 40, enabled: true, includeQuarantined: false },
-    capture: { enabled: true, maxPerSession: 20, minChars: 200, dedupeThreshold: 0.8 },
-    escalate: { enabled: true, maxCriticsPerSession: 4, selfConsistency: 1, threshold: 0.6 },
+    flushMs: 1000, // background write debounce
+    inject: {
+      enabled: true,
+      topK: 3,
+      tokenBudget: 1000,
+      candCap: 40,
+      includeQuarantined: false,
+      // Balanced default: first injection on task change, then only small re-injections
+      // when the same task hits a real failure or repeats the same failure.
+      oncePerTask: false,
+      maxInjectsPerTask: 2,
+      reinjectOn: ['tool-failure', 'repeated-failure'],
+      compactTopK: 1,
+      compactTokenBudget: 300,
+    },
+    capture: { enabled: true, maxPerSession: 10, minChars: 300, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
     dashboard: { enabled: true, host: '127.0.0.1', port: 0, recent: 15, webserver: true },
   },
 };
@@ -142,11 +155,57 @@ export function apply(ctx, config = {}) {
     } catch { /* ignore */ }
   }
 
-  const sessions = new Map(); // sessionKey -> { captures, critics, lastTask }
+  const sessions = new Map(); // sessionKey -> { captures, critics, lastTask, inject state }
   const sess = (key) => {
-    if (!sessions.has(key)) sessions.set(key, { captures: 0, critics: 0, lastTask: null });
+    if (!sessions.has(key)) {
+      sessions.set(key, {
+        captures: 0,
+        critics: 0,
+        lastTask: null,
+        lastTaskInjectCount: 0,
+        failureStreak: 0,
+        pendingReinject: false,
+        reinjectQuery: '',
+        injectDispose: null,
+      });
+    }
     return sessions.get(key);
   };
+
+  // Push a lesson block into the running context. If only systemPrompt.section is
+  // available, reuse one key and dispose the previous section so old injections do
+  // not pile up across turns.
+  function pushInjection(s, event, query, opts) {
+    const block = store.search(query, opts); // in-memory, budget-capped
+    if (!block) return false;
+    const agent = event?.agent ?? safeGet(ctx, 'agent');
+    if (agent?.inject) {
+      try {
+        agent.inject(block);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    if (systemPrompt?.section) {
+      try {
+        if (typeof s.injectDispose === 'function') {
+          s.injectDispose();
+          s.injectDispose = null;
+        }
+        const d = systemPrompt.section({ key: 'rsi-inject', text: block });
+        if (typeof d === 'function') s.injectDispose = d;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  function reinjectAllowed(type) {
+    return Array.isArray(cfg.inject.reinjectOn) && cfg.inject.reinjectOn.includes(type);
+  }
 
   // Resolve a followup method (critic escalation), guarded.
   const followup = (p) => {
@@ -163,8 +222,9 @@ export function apply(ctx, config = {}) {
     if (typeof d === 'function') disposers.push(d);
   }
 
-  // (2) Gated inject on pre-step — ONCE PER TURN (task-change gated) to avoid re-doing the
-  //     search/inject on every step of a multi-step turn. In-memory only; no disk I/O here.
+  // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
+  //     change, then only small re-injections when the same task fails and reinjectOn
+  //     enables that path. oncePerTask=true restores the old strict single-inject mode.
   if (cfg.inject.enabled && ctx?.on) {
     ctx.on('agent/pre-step', (event, next) => {
       try {
@@ -173,13 +233,32 @@ export function apply(ctx, config = {}) {
         const s = sess(key);
         if (task && task !== s.lastTask) {
           s.lastTask = task;
-          const block = store.search(task, cfg.inject); // in-memory, budget-capped
-          if (block) {
-            const agent = event?.agent ?? safeGet(ctx, 'agent');
-            if (agent?.inject) agent.inject(block);
-            else if (systemPrompt?.section) {
-              const d = systemPrompt.section({ key: `rsi-inject-${key}`, text: block });
-              if (typeof d === 'function') disposers.push(d);
+          s.lastTaskInjectCount = 0;
+          s.failureStreak = 0;
+          s.pendingReinject = false;
+          s.reinjectQuery = '';
+          const opts = cfg.inject.oncePerTask
+            ? cfg.inject
+            : { ...cfg.inject, topK: cfg.inject.topK, tokenBudget: cfg.inject.tokenBudget };
+          if (pushInjection(s, event, task, opts)) s.lastTaskInjectCount += 1;
+        } else if (
+          !cfg.inject.oncePerTask &&
+          task &&
+          s.lastTask === task &&
+          s.lastTaskInjectCount < (cfg.inject.maxInjectsPerTask ?? 2)
+        ) {
+          const toolReinject = s.pendingReinject && reinjectAllowed('tool-failure');
+          const repeatReinject = s.failureStreak >= 2 && reinjectAllowed('repeated-failure');
+          if (toolReinject || repeatReinject) {
+            const query = s.reinjectQuery || task;
+            const opts = {
+              ...cfg.inject,
+              topK: cfg.inject.compactTopK ?? 1,
+              tokenBudget: cfg.inject.compactTokenBudget ?? 300,
+            };
+            if (pushInjection(s, event, query, opts)) {
+              s.lastTaskInjectCount += 1;
+              s.pendingReinject = false;
             }
           }
         }
@@ -190,10 +269,10 @@ export function apply(ctx, config = {}) {
     });
   }
 
-  // (3) Gated capture + (4) auto-escalate critic on turn/end.
-  //     capture is short-circuited by shouldCapture (policy.js) BEFORE any persistence;
+  // (3) turn/end: failure tracking for balanced injection, plus gated capture and
+  //     auto-escalate. Capture is short-circuited by shouldCapture BEFORE persistence;
   //     addLesson/addTrajectory only enqueue a backgrounded flush (no blocking I/O).
-  if (cfg.capture.enabled && ctx?.on) {
+  if (ctx?.on) {
     ctx.on('turn/end', (event) => {
       try {
         const key = sessionKey(event, ctx);
@@ -201,6 +280,20 @@ export function apply(ctx, config = {}) {
         const task = taskText(event);
         const answer = answerText(event);
         const tools = toolResults(event);
+
+        if (task && task === s.lastTask) {
+          const hadFailure = outcomeSignal({ taskText: task, answerText: answer, toolResults: tools }).hadFailure;
+          if (hadFailure) {
+            s.failureStreak += 1;
+            s.pendingReinject = true;
+            const failedNames = tools.filter((t) => t && t.ok === false).map((t) => t.name).filter(Boolean);
+            s.reinjectQuery = [task, ...failedNames].filter(Boolean).join(' ');
+          } else {
+            s.failureStreak = 0;
+          }
+        }
+
+        if (cfg.capture.enabled) {
         const r = captureFromContext({
           task: { text: task },
           answerText: answer,
@@ -222,6 +315,7 @@ export function apply(ctx, config = {}) {
               s.critics += 1;
             }
           }
+        }
         }
       } catch {
         /* capture must never crash the turn */
