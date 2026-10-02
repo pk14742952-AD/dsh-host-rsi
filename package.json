@@ -44,6 +44,7 @@
     "config.default.json",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
     "PRINCIPLES.md",
     "LICENSE",
     "demo-serve.mjs",

@@ -1,3 +1,5 @@
+> 中文（默认） · [English](./README.en.md)
+
 # DSH HOST RSI记忆
 
 **给本地大模型做的 DSH 宿主插件，目前主要面向 Qwen3.8-27B 这类本地 27B 模型。**

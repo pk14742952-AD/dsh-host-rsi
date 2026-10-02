@@ -1,0 +1,170 @@
+> English (default) · [中文](./README.md)
+
+# DSH HOST RSI Memory
+
+**A DSH host plugin built for local LLMs, currently aimed primarily at local 27B models like Qwen3.8-27B.**
+It is a DSH **host plugin** that gives the model **continual self-improvement on every use**.
+Each run starts with a counter-reasoning self-check: the model interrogates its own answer before committing.
+**Trusted lessons are saved and injected into the next run.** If the cheap method does not resolve the issue,
+deeper critic rounds **automatically escalate**. No task-specific scorer is required for the general pattern.
+
+Repository: <https://github.com/pk14742952-AD/dsh-host-rsi>
+
+> **Want the technical principles or a local reproduction?** Read [PRINCIPLES.md](./PRINCIPLES.md)
+> (dedicated docs: signal ladder / reflection loop / triggers and efficiency / indexing / AREX-2 mapping / reproduction checklist, with source line references).
+
+## Principle Source (Acknowledgments)
+
+The core ideas of this project are drawn from and credit the following public work:
+
+- **AREX-2** (arXiv:2609.38288, BAAI 2026), a self-evolving agent framework. This project lands it as a
+  "local, incremental, usable-now" DSH host plugin; the point-by-point mapping is in [PRINCIPLES.md](./PRINCIPLES.md).
+- **Recursive Self-Improvement (RSI) and Continual Learning**: each run condenses success and failure into
+  retrievable, refutable, automatically escalating lesson entries. Trusted lessons are injected into later
+  contexts, so the model gets better with use. This is the basis for the memory signal ladder and escalation strategy.
+
+> **GUI note:** this project previously had no GUI and now includes one. The dashboard display pattern
+> ("click from Settings to open a web page") references the billion-context DSH plugin (MIT) **only for its
+> presentation approach**. The code was independently rewritten, not copied. See [client.js](./client.js) and
+> [lib/dashboard.js](./lib/dashboard.js).
+
+## Dashboard / GUI
+
+After restarting DSH, open **Settings > Plugins > DSH HOST RSI Memory** and click **Open dashboard** to inspect
+plugin status (enabled/degraded, trusted/quarantined/trajectory, recent records). The page polls `status.json`
+every 3 seconds.
+
+You can also run the standalone demo locally without DSH:
+
+```bash
+node demo-serve.mjs                # loopback and sample records (default port 8788)
+RSI_DEMO_PORT=9000 node demo-serve.mjs
+```
+
+## Design Goals
+
+- **No impact on the model or DSH**: all reads go through in-memory cache; disk I/O only happens during
+  debounced background writes. Hot paths (`pre-step` / `turn-end`) never block.
+- **Automatic triggering only at the right moments**: injection is once per turn (gated by task-change);
+  capture happens only at `turn/end` when `policy.js` passes; critic rounds start automatically only when the
+  cheap method fails or the user forces them.
+- **Lessons are collected to the local plugin directory in the background**: `addLesson` / `addTrajectory`
+  write to memory immediately and batch-flush to disk (`flushMs` debounce). If the directory is not writable,
+  the plugin degrades to pure memory (`store.disabled`) without crashing.
+- **Minimal resource usage**: `index.json` + `termindex.json` are read once at startup then kept in memory;
+  writes are batched; the debounce timer is `unref`ed so it does not hold the event loop or process open.
+- **Max compatibility**: the pure logic layer has zero host dependencies (covered by `node --test`);
+  every DSH call on the host side is wrapped with fallback checks and try/catch. If an event shape is wrong,
+  it becomes a no-op instead of throwing at the host.
+
+## Evolution Mechanism (Reliability-Weighted Signal Ladder)
+
+```text
+task + answer
+  |-- L1  verifiable check available? (code test / math == / SQL match / schema valid)
+  |        -> run it. L1 failure = high-value corrective lesson. (decisive -> stop)
+  `-- no L1 -> inline counter-reason: model emits
+             [VERIFY: CONFIRMED|REFUTED|UNCERTAIN; conf=..; lesson=..; fix=..; reason=..]
+              |-- CONFIRMED and conf >= threshold     -> trusted L2, stop (no critic)
+              |-- REFUTED                             -> automatic critic round (retry fix) -> corrective lesson
+              |-- UNCERTAIN / no tag / low confidence -> automatic critic round
+              `-- user forces rsi_verify              -> automatic critic round
+             still uncertain after critic -> quarantine (promoted to trusted only after stronger signal)
+```
+
+**Automatic but efficient:** every heavy path is gated. When there is nothing relevant it is a no-op. Capture
+only happens on turns with outcome signals (error / tool run / artifact / decision / self-chosen tag). Critics
+only start after the cheap method fails, and per-session cost is capped.
+
+## Directory Layout
+
+```text
+dsh-host-rsi/          # plugin package (code)
+  index.js             # DSH host entry: apply() + rsi_status tool + __RSI__ injection + /rsi/* routes
+  client.js            # browser client: "DSH HOST RSI Memory" settings section (inspired by billion-context, code independently rewritten)
+  demo-serve.mjs       # standalone demo (no DSH, loopback + example records)
+  cordis.patch.yml     # DSH host bundle patch (inserts dsh-host-rsi)
+  config.default.json  # default config
+  icon.svg             # settings icon
+  lib/                 # pure logic (unit-testable, no host dependency)
+    spine.js           # turn lifecycle + task-change detection
+    retrieve.js        # relevance ranking + token budget
+    inject.js          # injection text generation
+    interrogate.js     # self-check instruction, [VERIFY] tag parsing, critic prompt, self-consistency
+    signal.js          # signal ladder (L1/L3/REFUTED/CONFIRMED + weights)
+    scorers.js         # L1 verifiable checks (code/math/sql/schema auto-detection)
+    capture.js         # composes a turn into classified lesson + trajectory
+    policy.js          # trigger + escalation + budget gating
+    store.js           # file store + inverted index (memory cache + debounced background writes + graceful degradation)
+    status.js          # snapshot + records + formatStatusReport
+    dashboard.js       # dashboardHtml + /rsi/* webserver handler + standalone dashboard server
+  locale/              # settings i18n (zh/en)
+  test/                # node:test suite (including webserver/client host integration tests)
+E:\DSH\.rsi-memory\     # data directory (human-readable source of truth)
+  index.json  termindex.json
+  lessons/<domain>.md    # trusted, human-curatable
+  quarantined/<domain>.md # unverified, promoted later
+  trajectories/*.jsonl   # raw trajectories (for future LoRA distillation)
+```
+
+## Install (in DSH)
+
+Host-specific bundle. Install from GitHub:
+
+```bash
+dsh plugin --profile web add github:pk14742952-AD/dsh-host-rsi
+```
+
+After publishing to npm, you can also install it directly:
+
+```bash
+dsh plugin --profile web add dsh-host-rsi
+```
+
+Or use the plugin manager to `install_bundle` from the local `dsh-host-rsi/` directory. Restart DSH after
+installation; no build step is needed.
+
+## First-Run Verification
+
+In `index.js`, the event payload shape is "document name + defensive assumptions" (`agent/pre-step`,
+`turn/end`, `agent.followup`). On first run, use `cordis_inspect_query` (Event/Service) to confirm:
+
+- `turn/end` events expose the task, assistant text, and tool results the glue layer needs;
+- whether `agent.followup` / `agent.inject` exists in your profile (missing paths safely no-op).
+
+Then run:
+
+```bash
+cd E:\DSH\dsh-host-rsi
+node --test          # pure logic + data-layer suite (auto-discovers test/*.test.js)
+```
+
+## Configuration (bundle line `config`)
+
+See `config.default.json`:
+- `enabled` (master switch; false = fully no-op), `dir` (data directory), `flushMs` (background debounce ms);
+- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined}`;
+- `capture.{enabled,maxPerSession,minChars,dedupeThreshold}`;
+- `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
+- `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).
+
+Defaults are conservative for local models.
+
+## License Compliance
+
+- This project (`dsh-host-rsi`) is MIT, see [LICENSE](./LICENSE).
+- DSH (`@deepseek-ai`, MIT, Copyright 2026 DeepSeek) is the host. This project is a host plugin for DSH;
+  it does not modify or redistribute DSH source. It uses DSH host APIs (`ctx.on` / `ctx.inject` /
+  `webServer.register` / page injection). MIT permits third-party plugins to coexist and publish independently.
+  This project does not copy DSH code, so attaching DSH copyright notice is not required, but it is acknowledged here.
+- billion-context (MIT, Copyright 2026 ranxianglei): only its settings-page embedded web display pattern is
+  referenced; the code is independently rewritten (not copied line-for-line), with an MIT-style acknowledgment here.
+
+> **Conclusion:** DSH uses MIT and supports third-party plugins, so this project can be released compliantly.
+> This project is also MIT and explicitly credits DSH and billion-context.
+
+## Optional Next Step: Weight-Level Evolution
+
+`trajectories/` plus trusted lessons form a clean training set. Periodically export it and run small LoRA
+distillation on Qwen3.8-27B, with loss only on "forward-looking decisions" so the meta-skill is baked into
+weights. This is the batch, safer complement to the runtime memory loop.
