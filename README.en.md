@@ -2,15 +2,15 @@
 
 # DSH HOST RSI Memory
 
-**A DSH host plugin built for local LLMs, currently aimed primarily at local 27B models like Qwen3.8-27B, and compatible with local models such as Qwen3.8 Flash.**
-It is a DSH **host plugin** that gives the model **continual self-improvement on every use**.
+**A model-agnostic DSH host plugin, tuned by default for local LLMs: primarily Qwen3.8-27B and lightweight local models such as Qwen3.8 Flash, while also working with API models.**
+It is a DSH **host plugin** that adds a host-side **continual self-improvement memory layer on every use**.
 Each run starts with a counter-reasoning self-check: the model interrogates its own answer before committing.
 **Trusted lessons are saved and injected into the next run.** If the cheap method does not resolve the issue,
 deeper critic rounds **automatically escalate**. No task-specific scorer is required for the general pattern.
 
 Repository: <https://github.com/pk14742952-AD/dsh-host-rsi>
 
-> **Plugin summary**: a DSH memory / self-evolution plugin for local LLMs. It gathers
+> **Plugin summary**: a DSH memory / self-evolution plugin. It gathers
 > successes, failures, user corrections, and long-term preferences in the background,
 > turns high-value experience into trusted lessons, and injects them automatically the
 > next time a similar task appears. Changelog: [CHANGELOG.md](./CHANGELOG.md).
@@ -64,6 +64,10 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
   as a trusted **L3** lesson. Explicit durable preferences/rules (for example `always use httpx` or
   `please remember to use concise bullet lists`) are stored as `user-instruction` trusted lessons too;
   one-off task requests are not written to memory.
+- **Project-aware instruction dedupe keeps the memory clean**: user instructions are grouped by project/workspace
+  when possible (from paths in the instruction or from session context; otherwise they fall back to the global group).
+  Near-duplicate instructions within the same project are blocked by `hasDuplicate`; similar text in different projects
+  is not merged by mistake.
 - **Lessons are collected to the local plugin directory in the background**: `addLesson` / `addTrajectory`
   write to memory immediately and batch-flush to disk (`flushMs` debounce). If the directory is not writable,
   the plugin degrades to pure memory (`store.disabled`) without crashing.
@@ -154,8 +158,18 @@ installation; no build step is needed.
 
 ### Model compatibility
 
-The plugin is model-agnostic host logic. Defaults are conservative for local 27B models; lightweight local
-models such as Qwen3.8 Flash also work. Lower `inject.topK` and `inject.tokenBudget` if needed.
+The plugin is **model-agnostic host logic** and does not depend on a model's parameter count. In practice any model
+DSH can drive should work:
+
+- Local 27B models (for example Qwen3.8-27B): the current defaults are tuned for this class and it is the primary
+  validation target.
+- Lightweight local/Flash models (for example Qwen3.8 Flash): works fine; lower `inject.topK` / `inject.tokenBudget`
+  / `capture.maxPerSession` if the context window is tight.
+- API/cloud models: works too, because the plugin injects and reads text only and never modifies model weights.
+  Larger-context models can use higher `inject.topK` / `inject.tokenBudget` for fuller memory reuse.
+
+If your model's context or cost profile differs, adjust the injection budgets in `config.default.json` instead of
+changing plugin code.
 
 ## First-Run Verification
 

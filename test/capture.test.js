@@ -51,7 +51,7 @@ test('generic tool failure without a self-tag still becomes a visible quarantine
 });
 
 test('explicit user correction becomes a trusted L3 lesson', () => {
-  const r = captureUserCorrection({ taskText: '用 Python 写个脚本', correctionText: '不要用 requests，改用 httpx' });
+  const r = captureUserCorrection({ taskText: 'write python script', correctionText: 'do not use requests, use httpx' });
   assert.ok(r, 'user correction should capture');
   assert.equal(r.capture, true);
   assert.equal(r.lesson.layer, 'L3');
@@ -60,12 +60,37 @@ test('explicit user correction becomes a trusted L3 lesson', () => {
   assert.match(r.lesson.summary, /User correction/);
 });
 
-test('explicit user instruction/preference becomes a trusted L3 lesson', () => {
-  const r = captureUserInstruction({ instructionText: '以后都用 httpx，不要用 requests' });
+test('durable user instruction/preference becomes a trusted L3 lesson', () => {
+  const r = captureUserInstruction({ instructionText: 'always use httpx for HTTP requests', durable: true });
   assert.ok(r, 'user instruction should capture');
   assert.equal(r.capture, true);
   assert.equal(r.lesson.layer, 'L3');
   assert.equal(r.lesson.trusted, true);
   assert.equal(r.lesson.domain, 'user-instruction');
   assert.match(r.lesson.summary, /User instruction/);
+});
+
+test('generic one-off user task is recorded but quarantined', () => {
+  const r = captureUserInstruction({ instructionText: 'write a python downloader script', durable: false });
+  assert.ok(r, 'user task should still be recorded');
+  assert.equal(r.capture, true);
+  assert.equal(r.lesson.layer, 'Q');
+  assert.equal(r.lesson.trusted, false);
+  assert.equal(r.lesson.domain, 'user-instruction');
+  assert.match(r.lesson.summary, /User instruction/);
+});
+
+test('project-aware user instruction records a per-project domain + tag', () => {
+  const r = captureUserInstruction({ instructionText: 'always use httpx for HTTP requests', durable: true, project: 'E:\\DSH\\dsh-host-rsi' });
+  assert.ok(r);
+  assert.equal(r.lesson.domain, 'user-instruction/dsh-host-rsi');
+  assert.ok(r.lesson.tags.includes('project:dsh-host-rsi'));
+  assert.equal(r.trajectory.project, 'E:\\DSH\\dsh-host-rsi');
+});
+
+test('project-aware user correction records a per-project domain + tag', () => {
+  const r = captureUserCorrection({ taskText: 'build downloader', correctionText: 'do not use requests, switch to httpx', project: 'dsh-host-rsi' });
+  assert.ok(r);
+  assert.equal(r.lesson.domain, 'user-correction/dsh-host-rsi');
+  assert.ok(r.lesson.tags.includes('project:dsh-host-rsi'));
 });

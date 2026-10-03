@@ -26,6 +26,11 @@
     "captureUserCorrections": true,
     "captureUserInstructions": true
   },
+  "importRecent": {
+    "enabled": true,
+    "limit": 30,
+    "sessions": 10
+  },
   "escalate": {
     "enabled": true,
     "maxCriticsPerSession": 3,

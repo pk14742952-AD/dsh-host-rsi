@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
-import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction } from './lib/policy.js';
+import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction, isDurableUserInstruction, projectFromText } from './lib/policy.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -71,6 +71,7 @@ const Config = {
       compactTokenBudget: 300,
     },
     capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserCorrections: true, captureUserInstructions: true },
+    importRecent: { enabled: true, limit: 30, sessions: 10 },
     escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
     dashboard: { enabled: true, host: '127.0.0.1', port: 0, recent: 15, webserver: true },
   },
@@ -85,6 +86,7 @@ function normalize(config = {}) {
     flushMs: typeof config.flushMs === 'number' ? config.flushMs : d.flushMs,
     inject: merge(d.inject, config.inject),
     capture: merge(d.capture, config.capture),
+    importRecent: merge(d.importRecent, config.importRecent),
     escalate: merge(d.escalate, config.escalate),
     dashboard: merge(d.dashboard, config.dashboard),
   };
@@ -110,7 +112,11 @@ function eventData(event) {
 }
 
 function eventMessage(event) {
-  return eventData(event).message ?? event?.message ?? null;
+  const data = eventData(event);
+  if (data.message && typeof data.message === 'object') return data.message;
+  if (event?.message && typeof event.message === 'object') return event.message;
+  if (data && typeof data === 'object' && (data.content || data.role || data.source)) return data;
+  return null;
 }
 
 function eventRole(event) {
@@ -124,6 +130,32 @@ function eventType(event) {
 
 function sessionKey(event, ctx) {
   return event?.sessionId ?? event?.session?.id ?? event?.data?.sessionId ?? event?.data?.session?.id ?? eventMessage(event)?.sessionId ?? ctx?.session?.id ?? '_global';
+}
+function systemPromptService(ctx) {
+  try {
+    if (typeof ctx?.get === 'function') {
+      const sp = ctx.get('systemPrompt');
+      if (sp && typeof sp === 'object') return sp;
+    }
+  } catch {
+    /* fall through to safe property read */
+  }
+  return safeGet(ctx, 'systemPrompt');
+}
+function eventProject(event, fallbackText = '') {
+  const direct =
+    safeGet(event, 'project') ??
+    safeGet(event, 'workspace') ??
+    safeGet(event, 'cwd') ??
+    safeGet(event, 'projectId') ??
+    safeGet(event, 'data', 'project') ??
+    safeGet(event, 'data', 'workspace') ??
+    safeGet(event, 'data', 'cwd') ??
+    safeGet(event, 'session', 'project') ??
+    safeGet(event, 'session', 'workspace') ??
+    safeGet(event, 'session', 'cwd');
+  if (direct) return String(direct).trim() || null;
+  return projectFromText(fallbackText);
 }
 function taskText(event) {
   const role = eventRole(event);
@@ -158,6 +190,7 @@ function toolResults(event) {
 const PRE_STEP_EVENTS = ['agent/pre-step', 'pre-step', 'agent/step', 'session/step'];
 const TURN_END_EVENTS = ['turn/end', 'agent/turn/end', 'chat/turn/end', 'session/turn/end', 'turn/finish'];
 const MESSAGE_EVENTS = ['message', 'agent/message', 'chat/message', 'user/message', 'assistant/message', 'bot/message'];
+const SESSION_EVENT = 'session/event';
 
 export function apply(ctx, config = {}) {
   const cfg = normalize(config);
@@ -205,6 +238,7 @@ export function apply(ctx, config = {}) {
     ...snapshot(store, { enabled: cfg.enabled, recent: cfg.dashboard?.recent ?? 15, version: pkgVersion }),
     runtime: runtimeSnapshot(),
   });
+  importRecentInstructions();
 
   // (0) Optional self-hosted LOOPBACK dashboard (the "记忆" view). Idle-cheap (one listening
   //     socket; no CPU until a request); guarded so a bind failure never disturbs the host.
@@ -286,14 +320,14 @@ export function apply(ctx, config = {}) {
         return false;
       }
     }
-    const sp = safeGet(event, 'systemPrompt') ?? systemPrompt;
+    const sp = safeGet(event, 'systemPrompt') ?? systemPromptService(ctx);
     if (sp?.section) {
       try {
         if (typeof s.injectDispose === 'function') {
           s.injectDispose();
           s.injectDispose = null;
         }
-        const d = sp.section({ key: 'rsi-inject', text: block });
+        const d = sp.section({ name: 'rsi-inject', order: 320, text: block });
         if (typeof d === 'function') s.injectDispose = d;
         return true;
       } catch {
@@ -345,11 +379,11 @@ export function apply(ctx, config = {}) {
   }
 
   function ensureSelfCheck(event) {
-    const sp = safeGet(event, 'systemPrompt') ?? systemPrompt;
+    const sp = safeGet(event, 'systemPrompt') ?? systemPromptService(ctx);
     if (!sp?.section) return;
     try {
       if (typeof selfCheckDispose === 'function') selfCheckDispose();
-      const d = sp.section({ key: 'rsi-selfcheck', text: buildSelfCheckInstruction() });
+      const d = sp.section({ name: 'rsi-selfcheck', order: 340, text: buildSelfCheckInstruction() });
       if (typeof d === 'function') selfCheckDispose = d;
     } catch { /* systemPrompt.section unavailable -> no-op */ }
   }
@@ -406,8 +440,33 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // DSH does not always expose a useful pre-step event with the current user task. To keep
+  // injection reliable across DSH versions, also trigger at the user message itself. This
+  // matches the durable "task change" gate: only the first time a task text appears.
+  function maybeInjectOnUserMessage(key, content, event) {
+    if (!cfg.inject.enabled || !content) return;
+    try {
+      const s = sess(key);
+      if (content === s.lastTask) return;
+      s.lastTask = content;
+      s.lastTaskInjectCount = 0;
+      s.failureStreak = 0;
+      s.pendingReinject = false;
+      s.reinjectQuery = '';
+      runtime.taskChanges += 1;
+      if (pushInjection(s, event, content, cfg.inject)) {
+        s.lastTaskInjectCount += 1;
+        runtime.injects += 1;
+        runtime.lastInject = content;
+      }
+    } catch {
+      /* never block the message event */
+    }
+  }
+
   function handleMessage(event, source) {
     recordEvent(source);
+    if (markSeen(event, `message:${source}`)) return;
     try {
       const key = sessionKey(event, ctx);
       const role = eventRole(event);
@@ -420,10 +479,9 @@ export function apply(ctx, config = {}) {
         const canCapture = cfg.capture.enabled && s.captures < maxCap;
         const correctionWanted = canCapture && cfg.capture.captureUserCorrections !== false && prev && isUserCorrection({ correctionText: content });
         if (correctionWanted) {
-          const rec = captureUserCorrection({ taskText: prev.task || taskText(event), correctionText: content });
+          const rec = captureUserCorrection({ taskText: prev.task || taskText(event), correctionText: content, project: eventProject(event, content) });
           if (rec) {
-            const existingTop = store.findSimilar(rec.lesson, 8);
-            if (!existingTop || existingTop.overlap < (cfg.capture.dedupeThreshold ?? 0.8)) {
+            if (!store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
               store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
               store.addTrajectory({ ...rec.trajectory, id: event?.id ?? undefined });
               s.captures += 1;
@@ -436,10 +494,10 @@ export function apply(ctx, config = {}) {
         }
         const instructionWanted = cfg.capture.enabled && cfg.capture.captureUserInstructions !== false && s.captures < maxCap && isUserInstruction({ instructionText: content }) && !correctionWanted;
         if (instructionWanted) {
-          const rec = captureUserInstruction({ instructionText: content });
+          const durable = isDurableUserInstruction({ instructionText: content });
+          const rec = captureUserInstruction({ instructionText: content, durable, project: eventProject(event, content) });
           if (rec) {
-            const existingTop = store.findSimilar(rec.lesson, 8);
-            if (!existingTop || existingTop.overlap < (cfg.capture.dedupeThreshold ?? 0.8)) {
+            if (!store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
               store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
               store.addTrajectory({ ...rec.trajectory, id: event?.id ?? undefined });
               s.captures += 1;
@@ -450,6 +508,7 @@ export function apply(ctx, config = {}) {
             }
           }
         }
+        maybeInjectOnUserMessage(key, content, event);
         lastUserBySession.set(key, { task: taskText(event) || content, at: Date.now() });
         return;
       }
@@ -469,8 +528,8 @@ export function apply(ctx, config = {}) {
     if (markSeen(event, key)) return;
     try {
       const s = sess(key);
-      const task = taskText(event);
-      const answer = answerText(event);
+      const task = taskText(event) || lastUserBySession.get(key)?.task || '';
+      const answer = answerText(event) || lastAssistantBySession.get(key)?.answer || '';
       const tools = toolResults(event);
       runtime.turnsSeen += 1;
 
@@ -523,8 +582,138 @@ export function apply(ctx, config = {}) {
     }
   }
 
+  // DSH host plugins receive session lifecycle through `session/event`, not through
+  // `ctx.on('user/message')` in every release. Register both for compatibility; dedupe
+  // is handled by markSeen above.
+  function handleSessionEvent(session, event) {
+    if (!event || typeof event !== 'object') return;
+    const type = String(event.type || '').toLowerCase();
+    const source = `session/${type}`;
+    const merged = { ...event, sessionId: event?.sessionId ?? session?.id };
+    if (type === 'user/message' || type === 'assistant/message' || type === 'message' || type === 'bot/message') {
+      handleMessage(merged, source);
+    } else if (type === 'turn/end' || type === 'agent/turn/end' || type === 'chat/turn/end' || type === 'session/turn/end' || type === 'turn/finish') {
+      handleTurnEnd(merged, source);
+    } else if (type === 'pre-step' || type === 'agent/pre-step') {
+      handlePreStep(merged, source);
+    }
+  }
+
+  // First-run / boot import: DSH can already hold many chats before this plugin is
+  // installed. Instead of forcing the user to "do something" before the plugin proves
+  // useful, scan the live session store once and record recent user instructions as
+  // normal memory rows. Guards every host call; never blocks or throws into DSH.
+  function extractUserMessages(events) {
+    const out = [];
+    if (!Array.isArray(events)) return out;
+    for (const event of events) {
+      if (!event || typeof event !== 'object') continue;
+      if (!String(event.type || '').toLowerCase().includes('user')) continue;
+      const data = eventData(event);
+      const m = eventMessage(event);
+      const content = contentText(m?.content) || contentText(event?.message?.content) || contentText(event?.content) || contentText(event?.text);
+      const source = m?.source ?? data?.source;
+      if (source && typeof source === 'object' && source.kind && source.kind !== 'user') continue;
+      const text = String(content || '').replace(/\s+/g, ' ').trim();
+      if (!text) continue;
+      out.push({ seq: event.seq, text });
+    }
+    return out;
+  }
+
+  function importRecentInstructions() {
+    if (!cfg.importRecent?.enabled || !ctx?.inject) return;
+    try {
+      ctx.inject(['sessions', 'sessionPersistence'], (sub) => {
+        const sessionStore = sub?.sessions;
+        const persistence = sub?.sessionPersistence;
+        const limit = cfg.importRecent.limit ?? 30;
+        const sessionLimit = cfg.importRecent.sessions ?? 10;
+        const seen = new Set();
+        const seenIds = new Set();
+        let collected = 0;
+        const ingest = (sessionId, events) => {
+          if (!events || !Array.isArray(events)) return;
+          for (const { text } of extractUserMessages(events)) {
+            if (collected >= limit) return;
+            if (seen.has(text) || !isUserInstruction({ instructionText: text })) continue;
+            const durable = isDurableUserInstruction({ instructionText: text });
+            const rec = captureUserInstruction({ instructionText: text, durable, project: projectFromText(text) });
+            if (!rec) continue;
+            if (store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
+              seen.add(text);
+              continue;
+            }
+            store.addLesson({ ...rec.lesson, sourceRef: sessionId ?? null });
+            store.addTrajectory({ ...rec.trajectory, id: sessionId ? `${sessionId}-${collected}` : undefined });
+            seen.add(text);
+            collected += 1;
+            runtime.instructions += 1;
+            runtime.captures += 1;
+            runtime.lastInstruction = text;
+          }
+        };
+        const readStored = async (id) => {
+          try {
+            if (!persistence) return [];
+            if (typeof persistence.readFrom === 'function') {
+              const r = await persistence.readFrom(id, 0);
+              return r?.events ?? [];
+            }
+            if (typeof persistence.open === 'function') {
+              const handle = await persistence.open(id, 'read');
+              try {
+                const r = await handle.read(0);
+                return r?.events ?? [];
+              } finally {
+                await handle.close();
+              }
+            }
+          } catch {
+            /* unreadable session; skip */
+          }
+          return [];
+        };
+        void (async () => {
+          if (sessionStore && typeof sessionStore.list === 'function') {
+            const sessions = sessionStore.list();
+            if (Array.isArray(sessions)) {
+              for (const session of sessions.slice(-sessionLimit)) {
+                if (!session?.id) continue;
+                seenIds.add(session.id);
+                let events = [];
+                if (typeof session?.snapshotEvents === 'function') {
+                  try { events = session.snapshotEvents(); } catch { events = []; }
+                }
+                ingest(session.id, events);
+                if (collected >= limit) break;
+              }
+            }
+          }
+          if (persistence && typeof persistence.list === 'function') {
+            let headers;
+            try { headers = await persistence.list(); } catch { headers = []; }
+            if (Array.isArray(headers)) {
+              const sorted = [...headers].sort((a, b) => (b?.createdAt ?? 0) - (a?.createdAt ?? 0));
+              for (const h of sorted.slice(0, sessionLimit)) {
+                const id = h?.id ?? h?.sessionId;
+                if (!id || seenIds.has(id)) continue;
+                seenIds.add(id);
+                const events = await readStored(id);
+                ingest(id, events);
+                if (collected >= limit) break;
+              }
+            }
+          }
+          if (collected > 0) store.flushSync();
+        })();
+      });
+    } catch {
+      /* host may not expose sessions/inject -> no-op */
+    }
+  }
+
   // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
-  const systemPrompt = safeGet(ctx, 'systemPrompt');
   ensureSelfCheck({});
 
   // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
@@ -545,6 +734,9 @@ export function apply(ctx, config = {}) {
   //     auto-escalate. Capture is short-circuited by shouldCapture BEFORE persistence;
   //     addLesson/addTrajectory only enqueue a backgrounded flush (no blocking I/O).
   if (ctx?.on) {
+    try {
+      ctx.on(SESSION_EVENT, handleSessionEvent);
+    } catch { /* host may not expose session/event -> no-op */ }
     for (const name of TURN_END_EVENTS) {
       try {
         ctx.on(name, (event) => handleTurnEnd(event, name));

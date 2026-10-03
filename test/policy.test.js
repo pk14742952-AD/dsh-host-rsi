@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate, isUserCorrection, isUserInstruction } from '../lib/policy.js';
+import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate, isUserCorrection, isUserInstruction, isDurableUserInstruction, projectFromText } from '../lib/policy.js';
 
 const cfg = {
   capture: { enabled: true, maxPerSession: 20, minChars: 200, dedupeThreshold: 0.8 },
@@ -8,7 +8,7 @@ const cfg = {
 };
 
 test('non-trivial: error/failure is capture-worthy', () => {
-  assert.equal(isNonTrivial({ taskText: 'fix the bug', answerText: '…Traceback (most recent…)…', toolResults: [] }), true);
+  assert.equal(isNonTrivial({ taskText: 'fix the bug', answerText: 'Traceback (most recent call last)', toolResults: [] }), true);
 });
 
 test('non-trivial: opted-in [VERIFY] tag', () => {
@@ -62,16 +62,30 @@ test('isDuplicate threshold', () => {
 test('user correction detection: explicit corrections and long instructions are captured', () => {
   assert.equal(isUserCorrection({ correctionText: '不对，应该用 B 方案' }), true);
   assert.equal(isUserCorrection({ correctionText: 'please use the other approach next time' }), true);
-  assert.equal(isUserCorrection({ correctionText: '不要再用这个模型输出格式' }), true);
+  assert.equal(isUserCorrection({ correctionText: '不要再使用这个模型输出格式' }), true);
   assert.equal(isUserCorrection({ correctionText: 'ok' }), false);
   assert.equal(isUserCorrection({ correctionText: '谢谢' }), false);
 });
 
-test('user instruction detection: durable rules/preferences are captured, one-off tasks are not', () => {
+test('user instruction detection: any non-chit-chat user input is recorded for visibility', () => {
   assert.equal(isUserInstruction({ instructionText: '以后都用 httpx，不要用 requests' }), true);
   assert.equal(isUserInstruction({ instructionText: '请记住输出用简洁列表' }), true);
   assert.equal(isUserInstruction({ instructionText: 'please remember to use pnpm next time' }), true);
-  assert.equal(isUserInstruction({ instructionText: '写一个 Python 下载脚本' }), false);
-  assert.equal(isUserInstruction({ instructionText: '帮我把这个文件转成 PDF' }), false);
+  assert.equal(isUserInstruction({ instructionText: '写一个 Python 下载脚本' }), true);
+  assert.equal(isUserInstruction({ instructionText: '帮我把这个文件转成 PDF' }), true);
   assert.equal(isUserInstruction({ instructionText: 'ok' }), false);
+});
+
+test('durable user instruction detection separates rules from one-off tasks', () => {
+  assert.equal(isDurableUserInstruction({ instructionText: '以后都用 httpx，不要用 requests' }), true);
+  assert.equal(isDurableUserInstruction({ instructionText: '请记住输出用简洁列表' }), true);
+  assert.equal(isDurableUserInstruction({ instructionText: 'please remember to use pnpm next time' }), true);
+  assert.equal(isDurableUserInstruction({ instructionText: '写一个 Python 下载脚本' }), false);
+  assert.equal(isDurableUserInstruction({ instructionText: '帮我把这个文件转成 PDF' }), false);
+});
+
+test('projectFromText extracts a stable project key from absolute paths', () => {
+  assert.equal(projectFromText('optimize E:\\DSH\\dsh-host-rsi\\index.js import'), 'dsh-host-rsi');
+  assert.equal(projectFromText('fix /home/me/myproject readme'), 'myproject');
+  assert.equal(projectFromText('a plain instruction without a path'), null);
 });

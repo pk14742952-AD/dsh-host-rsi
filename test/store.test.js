@@ -49,6 +49,49 @@ test('findSimilar drives de-dup (high overlap) vs distinct (low overlap)', () =>
   assert.ok(!diff || diff.overlap < 0.5, `expected low overlap, got ${JSON.stringify(diff)}`);
 });
 
+test('hasDuplicate: same-project near-duplicate instructions are rejected', () => {
+  const { store } = tmpStore();
+  const first = store.addLesson({
+    domain: 'user-instruction/dsh-host-rsi',
+    tags: ['user-instruction', 'L3', 'project:dsh-host-rsi'],
+    summary: 'User instruction: always use httpx for HTTP requests',
+    fix: 'always use httpx for HTTP requests',
+    layer: 'L3',
+    trusted: true,
+  });
+  assert.equal(store.hasDuplicate({
+    domain: 'user-instruction/dsh-host-rsi',
+    tags: ['user-instruction', 'L3', 'project:dsh-host-rsi'],
+    summary: 'User instruction: always use httpx for HTTP requests',
+    fix: 'always use httpx for HTTP requests',
+  }, 0.85), true, 'identical text should be a duplicate');
+  assert.equal(store.hasDuplicate({
+    domain: 'user-instruction/dsh-host-rsi',
+    tags: ['user-instruction', 'L3', 'project:dsh-host-rsi'],
+    summary: 'User instruction: please always use httpx for HTTP requests',
+    fix: 'please always use httpx for HTTP requests',
+  }, 0.85), true, 'near-identical same-project text should be a duplicate');
+  void first;
+});
+
+test('hasDuplicate: different projects are NOT duplicates even for similar text', () => {
+  const { store } = tmpStore();
+  store.addLesson({
+    domain: 'user-instruction/dsh-host-rsi',
+    tags: ['user-instruction', 'L3', 'project:dsh-host-rsi'],
+    summary: 'User instruction: always use httpx for HTTP requests',
+    fix: 'always use httpx for HTTP requests',
+    layer: 'L3',
+    trusted: true,
+  });
+  assert.equal(store.hasDuplicate({
+    domain: 'user-instruction/other-project',
+    tags: ['user-instruction', 'L3', 'project:other-project'],
+    summary: 'User instruction: always use httpx for HTTP requests',
+    fix: 'always use httpx for HTTP requests',
+  }, 0.85), false, 'different project should not collide');
+});
+
 test('promote flips quarantined -> trusted and logs it', () => {
   const { store, dir } = tmpStore();
   const q = store.addLesson({ domain: 'js', tags: ['promises'], summary: 'maybe await', layer: 'Q', trusted: false });

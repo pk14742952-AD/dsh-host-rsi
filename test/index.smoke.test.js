@@ -127,6 +127,83 @@ test('oncePerTask=true restores strict single injection for the same task', () =
   cleanup();
 });
 
+test('user message injects when pre-step is unavailable', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-uminject-'));
+  const store = openStore(dir, { flushMs: 100000 });
+  store.ensureLayout();
+  store.addLesson({
+    domain: 'sql',
+    tags: ['sql'],
+    summary: 'check indexes before optimizing',
+    layer: 'L2',
+    trusted: true,
+  });
+  store.flushSync();
+
+  const { ctx, cleanup } = makeHarness(dir);
+  const agent = { inject: (block) => ctx.injected.push(block) };
+  ctx.agent = agent;
+  ctx.events['session/event']({ id: 'session-1' }, { type: 'user/message', sessionId: 'session-1', data: { content: 'sql tuning please', source: { kind: 'user' }, role: 'user' } });
+  assert.equal(ctx.injected.length, 1, 'user/message should inject the trusted lesson');
+  assert.match(ctx.injected[0], /indexes/);
+  cleanup();
+});
+
+test('injection uses DSH systemPrompt.section name/order shape', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-spinject-'));
+  const store = openStore(dir, { flushMs: 100000 });
+  store.ensureLayout();
+  store.addLesson({
+    domain: 'sql',
+    tags: ['sql'],
+    summary: 'always filter before scan',
+    layer: 'L2',
+    trusted: true,
+  });
+  store.flushSync();
+
+  const sections = [];
+  const eventHandlers = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    get(name) {
+      if (name === 'systemPrompt') {
+        return {
+          section(section) {
+            sections.push(section);
+            return () => {};
+          },
+        };
+      }
+      return undefined;
+    },
+    tools: {
+      register() {
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    inject: { enabled: true, topK: 3, tokenBudget: 1000, candCap: 40, includeQuarantined: false, oncePerTask: false, maxInjectsPerTask: 2, reinjectOn: ['tool-failure', 'repeated-failure'], compactTopK: 1, compactTokenBudget: 300 },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers['session/event']({ id: 's1' }, { type: 'user/message', sessionId: 's1', data: { content: 'sql scan please', source: { kind: 'user' }, role: 'user' } });
+  assert.equal(sections.some((s) => s.name === 'rsi-inject' && Number.isFinite(s.order) && /filter/.test(s.text)), true, 'DSH systemPrompt.section must receive name/order');
+  cleanup();
+});
+
 test('apply registers DSH event aliases + rsi_events/rsi_demo_capture diagnostic tools', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-fallback-'));
   const eventNames = [];
@@ -296,6 +373,94 @@ test('DSH data.message content shape triggers correction + instruction capture',
   assert.equal(instruction.layer, 'L3');
   assert.ok(correction, 'DSH user/message data shape after assistant should record user-correction');
   assert.equal(correction.trusted, true);
+
+  cleanup();
+});
+
+test('session/event subscribes to DSH lifecycle and records ordinary user input', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-session-event-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserInstructions: true },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers['session/event']({ id: 's4' }, {
+    type: 'user/message',
+    data: { message: { content: '帮我写一个 Python 下载脚本', source: { kind: 'user' } } },
+  });
+
+  const recs = await toolRuns.rsi_records({ limit: 10 });
+  const task = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-instruction') : null;
+  assert.ok(task, 'session/event user message should be recorded');
+  assert.equal(task.layer, 'Q');
+  assert.equal(task.trusted, false);
+
+  cleanup();
+});
+
+test('session/event user/message with data.content records instruction', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-session-content-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserInstructions: true },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers['session/event']({ id: 's5' }, {
+    type: 'user/message',
+    data: {
+      role: 'user',
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: '帮我写一个 Python 下载脚本' }],
+    },
+  });
+
+  const recs = await toolRuns.rsi_records({ limit: 10 });
+  const task = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-instruction') : null;
+  assert.ok(task, 'session/event data.content user message should be recorded');
+  assert.equal(task.layer, 'Q');
+  assert.equal(task.trusted, false);
 
   cleanup();
 });

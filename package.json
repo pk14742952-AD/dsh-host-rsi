@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.1.5",
+  "version": "0.1.11",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "memory",
     "local-llm"
   ],
-  "description": "DSH host RSI for local LLMs (Qwen3.8 27B, compatible with Qwen3.8 Flash): per-use continual self-improvement, counter-reason self-check, critic escalation, and inverted-index memory retrieval.",
+  "description": "Model-agnostic DSH host plugin for continual self-improvement: per-use self-check, trusted-lesson capture, project-aware instruction dedupe, critic escalation, and inverted-index memory retrieval. Tuned for local 27B models like Qwen3.8-27B and compatible with local Flash/API models.",
   "author": "pk14742952-AD <192967623+pk14742952-AD@users.noreply.github.com>",
   "repository": {
     "type": "git",
@@ -28,6 +28,9 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test:e2e": "node test/e2e-model-injection.mjs"
   },
   "icon": "./icon.svg",
   "exports": {
