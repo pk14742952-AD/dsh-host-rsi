@@ -83,7 +83,7 @@ window.__ModuleLoader__.load({
         createElement("div", { style: { opacity: 0.7, margin: "2px 0 8px" } }, t("hint")),
         createElement("div", { style: { margin: "6px 0" } },
           createElement("span", { style: { opacity: 0.7 } }, "\u63d2\u4ef6\u72b6\u6001\uff1a"),
-          createElement("span", { style: { fontWeight: 600, color: s && s.enabled !== false && !s.degraded ? "#4ade80" : (s && s.enabled === false ? "#f87171" : "#facc15") } }, stateLabel)
+          createElement("span", { style: { fontWeight: 600, color: s && s.enabled !== false && !s.degraded ? "#4ade80" : (s && s.enabled === false ? "#f87171" : "#facc15") } }, (s && s.version ? stateLabel + " · v" + s.version : stateLabel))
         ),
         s ? createElement("div", { style: { margin: "4px 0" } },
           "\u53ef\u4fe1\u6559\u8bad ", s.totals.trusted, " \u00b7 \u9694\u79bb(\u5f85\u8bc1\u5b9e) ", s.totals.quarantined, " \u00b7 \u8f68\u8ff9 ", s.totals.trajectories, " \u00b7 \u603b\u6570 ", s.totals.lessons

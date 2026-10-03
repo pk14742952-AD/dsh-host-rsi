@@ -14,12 +14,20 @@
 // is guarded so a wrong shape no-ops instead of throwing. The real logic lives in lib/*
 // and is unit-tested independently of this glue.
 
+import fs from 'node:fs';
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
 import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction } from './lib/policy.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
+
+let pkgVersion = '0.0.0';
+try {
+  pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || pkgVersion;
+} catch {
+  /* version display is best-effort */
+}
 
 // Config defaults; users override via the bundle row config (cordis.patch.yml).
 // Safely read a (possibly proxied) ctx service property without triggering cordis'
@@ -83,14 +91,61 @@ function normalize(config = {}) {
 }
 
 // --- Defensive event field extraction (API assumptions; verify on activation) ---
+function contentText(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .filter((part) => part && typeof part === 'object' && part.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n');
+  }
+  if (value && typeof value === 'object') {
+    return typeof value.text === 'string' ? value.text : typeof value.content === 'string' ? value.content : '';
+  }
+  return '';
+}
+
+function eventData(event) {
+  return event?.data && typeof event.data === 'object' ? event.data : {};
+}
+
+function eventMessage(event) {
+  return eventData(event).message ?? event?.message ?? null;
+}
+
+function eventRole(event) {
+  const m = eventMessage(event);
+  return String(event?.role ?? event?.kind ?? event?.type ?? event?.message?.role ?? m?.role ?? '').toLowerCase();
+}
+
+function eventType(event) {
+  return String(event?.type ?? event?.kind ?? event?.role ?? event?.message?.type ?? '').toLowerCase();
+}
+
 function sessionKey(event, ctx) {
-  return event?.sessionId ?? event?.session?.id ?? ctx?.session?.id ?? '_global';
+  return event?.sessionId ?? event?.session?.id ?? event?.data?.sessionId ?? event?.data?.session?.id ?? eventMessage(event)?.sessionId ?? ctx?.session?.id ?? '_global';
 }
 function taskText(event) {
-  return event?.task ?? event?.input?.text ?? event?.messages?.find?.((m) => m.role === 'user')?.content ?? (event?.message?.role === 'user' ? event?.message?.content : '') ?? (event?.role === 'user' ? event?.content : '') ?? '';
+  const role = eventRole(event);
+  const type = eventType(event);
+  const m = eventMessage(event);
+  const direct = typeof event?.task === 'string' ? event.task : typeof event?.input?.text === 'string' ? event.input.text : typeof event?.prompt === 'string' ? event.prompt : '';
+  if (direct) return direct;
+  if (role.includes('user') || type.includes('user')) {
+    return contentText(m?.content) || contentText(event?.content) || contentText(event?.text) || (event?.messages?.find?.((x) => x?.role === 'user') ? contentText(event.messages.find((x) => x.role === 'user').content) : '');
+  }
+  return '';
 }
 function answerText(event) {
-  return event?.assistantText ?? event?.answer ?? event?.message?.content ?? event?.content ?? event?.messages?.filter?.((m) => m.role === 'assistant')?.map?.((m) => m.content).join('\n') ?? '';
+  const role = eventRole(event);
+  const type = eventType(event);
+  const m = eventMessage(event);
+  const content = contentText(m?.content) || contentText(event?.content);
+  if (typeof event?.assistantText === 'string' && event.assistantText) return event.assistantText;
+  if (typeof event?.answer === 'string' && event.answer) return event.answer;
+  if (role.includes('assistant') || type.includes('assistant') || type.includes('bot') || role.includes('bot') || role.includes('model')) return content;
+  if (m?.content || event?.message?.content) return content;
+  return event?.messages?.filter?.((x) => x?.role === 'assistant')?.map?.((x) => contentText(x.content)).filter(Boolean).join('\n') || '';
 }
 function toolResults(event) {
   const tr = event?.toolResults ?? event?.tools ?? [];
@@ -147,7 +202,7 @@ export function apply(ctx, config = {}) {
     runtime.lastEventAt = Date.now();
   };
   const liveSnapshot = () => ({
-    ...snapshot(store, { enabled: cfg.enabled, recent: cfg.dashboard?.recent ?? 15 }),
+    ...snapshot(store, { enabled: cfg.enabled, recent: cfg.dashboard?.recent ?? 15, version: pkgVersion }),
     runtime: runtimeSnapshot(),
   });
 
@@ -303,7 +358,7 @@ export function apply(ctx, config = {}) {
     recordEvent(source);
     try {
       const key = sessionKey(event, ctx);
-      const task = taskText(event);
+      const task = taskText(event) || lastUserBySession.get(key)?.task || '';
       const s = sess(key);
       if (!task) return;
       ensureSelfCheck(event);
@@ -355,8 +410,9 @@ export function apply(ctx, config = {}) {
     recordEvent(source);
     try {
       const key = sessionKey(event, ctx);
-      const role = String(event?.role ?? event?.kind ?? event?.type ?? event?.message?.role ?? '').toLowerCase();
-      const content = String(event?.message?.content ?? event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
+      const role = eventRole(event);
+      const m = eventMessage(event);
+      const content = contentText(m?.content) || String(event?.message?.content ?? event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
       if (role && role.includes('user')) {
         const prev = lastAssistantBySession.get(key);
         const s = sess(key);
@@ -397,7 +453,7 @@ export function apply(ctx, config = {}) {
         lastUserBySession.set(key, { task: taskText(event) || content, at: Date.now() });
         return;
       }
-      const isAssistant = role.includes('assistant') || role.includes('bot') || role.includes('model') || !!event?.assistantText || !!event?.message?.content;
+      const isAssistant = role.includes('assistant') || role.includes('bot') || role.includes('model') || eventType(event).includes('assistant') || eventType(event).includes('bot') || !!event?.assistantText || (!!m?.content && (role.includes('assistant') || role.includes('bot'))) || (!!event?.message?.content && role.includes('assistant'));
       if (isAssistant) {
         const last = lastUserBySession.get(key);
         const merged = { ...event, task: event?.task || last?.task || '', sessionId: event?.sessionId ?? key, assistantText: event?.assistantText ?? content, content };

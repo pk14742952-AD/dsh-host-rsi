@@ -244,3 +244,58 @@ test('explicit user instruction/preference is captured as a trusted L3 lesson', 
 
   cleanup();
 });
+
+test('DSH data.message content shape triggers correction + instruction capture', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-dsh-shape-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserInstructions: true, captureUserCorrections: true },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers['user/message']({
+    type: 'user/message',
+    sessionId: 's3',
+    data: { message: { content: '以后都用 httpx，不要用 requests', source: { kind: 'user' } } },
+  });
+  eventHandlers['assistant/message']({
+    type: 'assistant/message',
+    sessionId: 's3',
+    data: { message: { content: [{ type: 'text', text: '给你一个 requests 实现' }], source: { kind: 'model' } } },
+  });
+  eventHandlers['user/message']({
+    type: 'user/message',
+    sessionId: 's3',
+    data: { message: { content: '不要用 requests，改用 httpx', source: { kind: 'user' } } },
+  });
+
+  const recs = await toolRuns.rsi_records({ limit: 20 });
+  const instruction = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-instruction') : null;
+  const correction = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-correction') : null;
+  assert.ok(instruction, 'DSH user/message data shape should record user-instruction');
+  assert.equal(instruction.layer, 'L3');
+  assert.ok(correction, 'DSH user/message data shape after assistant should record user-correction');
+  assert.equal(correction.trusted, true);
+
+  cleanup();
+});
