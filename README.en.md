@@ -10,6 +10,11 @@ deeper critic rounds **automatically escalate**. No task-specific scorer is requ
 
 Repository: <https://github.com/pk14742952-AD/dsh-host-rsi>
 
+> **Plugin summary**: a DSH memory / self-evolution plugin for local LLMs. It gathers
+> successes, failures, user corrections, and long-term preferences in the background,
+> turns high-value experience into trusted lessons, and injects them automatically the
+> next time a similar task appears. Changelog: [CHANGELOG.md](./CHANGELOG.md).
+
 > **Want the technical principles or a local reproduction?** Read [PRINCIPLES.md](./PRINCIPLES.md)
 > (dedicated docs: signal ladder / reflection loop / triggers and efficiency / indexing / AREX-2 mapping / reproduction checklist, with source line references).
 
@@ -54,6 +59,11 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
   record, so users can confirm the plugin is actually watching.
 - **Diagnostic and demo tools**: call `rsi_events` to inspect live trigger state, or `rsi_demo_capture` to add
   one sample trusted lesson for a quick dashboard/settings check.
+- **User corrections and long-term instructions are remembered**: when a user gives an explicit correction or
+  new instruction after an assistant reply (for example “don't use requests, use httpx”), the plugin records it
+  as a trusted **L3** lesson. Explicit durable preferences/rules (for example `always use httpx` or
+  `please remember to use concise bullet lists`) are stored as `user-instruction` trusted lessons too;
+  one-off task requests are not written to memory.
 - **Lessons are collected to the local plugin directory in the background**: `addLesson` / `addTrajectory`
   write to memory immediately and batch-flush to disk (`flushMs` debounce). If the directory is not writable,
   the plugin degrades to pure memory (`store.disabled`) without crashing.
@@ -167,7 +177,7 @@ node --test          # pure logic + data-layer suite (auto-discovers test/*.test
 See `config.default.json`:
 - `enabled` (master switch; false = fully no-op), `dir` (data directory), `flushMs` (background debounce ms);
 - `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`;
-- `capture.{enabled,maxPerSession,minChars,dedupeThreshold}`;
+- `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`;
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
 - `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).
 

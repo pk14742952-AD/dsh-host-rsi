@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -46,6 +46,7 @@
     "README.md",
     "README.en.md",
     "PRINCIPLES.md",
+    "CHANGELOG.md",
     "LICENSE",
     "demo-serve.mjs",
     "icon.svg"

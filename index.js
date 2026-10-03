@@ -16,8 +16,8 @@
 
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
-import { captureFromContext } from './lib/capture.js';
-import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk } from './lib/policy.js';
+import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
+import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction } from './lib/policy.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -62,7 +62,7 @@ const Config = {
       compactTopK: 1,
       compactTokenBudget: 300,
     },
-    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserCorrections: true, captureUserInstructions: true },
     escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
     dashboard: { enabled: true, host: '127.0.0.1', port: 0, recent: 15, webserver: true },
   },
@@ -125,6 +125,8 @@ export function apply(ctx, config = {}) {
     injects: 0,
     reInjects: 0,
     captures: 0,
+    corrections: 0,
+    instructions: 0,
     failures: 0,
     critics: 0,
     taskChanges: 0,
@@ -132,6 +134,8 @@ export function apply(ctx, config = {}) {
     lastEvent: null,
     lastEventAt: null,
     lastCapture: null,
+    lastCorrection: null,
+    lastInstruction: null,
     lastInject: null,
     lastReason: null,
   };
@@ -262,6 +266,7 @@ export function apply(ctx, config = {}) {
   const seenEvents = new WeakSet();
   const seenDigests = new Map();
   const lastUserBySession = new Map();
+  const lastAssistantBySession = new Map();
   let selfCheckDispose = null;
 
   function eventDigest(event, key) {
@@ -353,6 +358,42 @@ export function apply(ctx, config = {}) {
       const role = String(event?.role ?? event?.kind ?? event?.type ?? event?.message?.role ?? '').toLowerCase();
       const content = String(event?.message?.content ?? event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
       if (role && role.includes('user')) {
+        const prev = lastAssistantBySession.get(key);
+        const s = sess(key);
+        const maxCap = cfg.capture.maxPerSession ?? 10;
+        const canCapture = cfg.capture.enabled && s.captures < maxCap;
+        const correctionWanted = canCapture && cfg.capture.captureUserCorrections !== false && prev && isUserCorrection({ correctionText: content });
+        if (correctionWanted) {
+          const rec = captureUserCorrection({ taskText: prev.task || taskText(event), correctionText: content });
+          if (rec) {
+            const existingTop = store.findSimilar(rec.lesson, 8);
+            if (!existingTop || existingTop.overlap < (cfg.capture.dedupeThreshold ?? 0.8)) {
+              store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
+              store.addTrajectory({ ...rec.trajectory, id: event?.id ?? undefined });
+              s.captures += 1;
+              runtime.corrections += 1;
+              runtime.captures += 1;
+              runtime.lastCorrection = content;
+              runtime.lastCapture = prev.task || content;
+            }
+          }
+        }
+        const instructionWanted = cfg.capture.enabled && cfg.capture.captureUserInstructions !== false && s.captures < maxCap && isUserInstruction({ instructionText: content }) && !correctionWanted;
+        if (instructionWanted) {
+          const rec = captureUserInstruction({ instructionText: content });
+          if (rec) {
+            const existingTop = store.findSimilar(rec.lesson, 8);
+            if (!existingTop || existingTop.overlap < (cfg.capture.dedupeThreshold ?? 0.8)) {
+              store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
+              store.addTrajectory({ ...rec.trajectory, id: event?.id ?? undefined });
+              s.captures += 1;
+              runtime.instructions += 1;
+              runtime.captures += 1;
+              runtime.lastInstruction = content;
+              runtime.lastCapture = content;
+            }
+          }
+        }
         lastUserBySession.set(key, { task: taskText(event) || content, at: Date.now() });
         return;
       }
@@ -360,6 +401,7 @@ export function apply(ctx, config = {}) {
       if (isAssistant) {
         const last = lastUserBySession.get(key);
         const merged = { ...event, task: event?.task || last?.task || '', sessionId: event?.sessionId ?? key, assistantText: event?.assistantText ?? content, content };
+        lastAssistantBySession.set(key, { task: merged.task, answer: content, at: Date.now() });
         handleTurnEnd(merged, source + ':assistant');
       }
     } catch { /* never block the event */ }
@@ -558,6 +600,7 @@ export function apply(ctx, config = {}) {
     sessions.clear();
     seenDigests.clear();
     lastUserBySession.clear();
+    lastAssistantBySession.clear();
     try { selfCheckDispose?.(); } catch { /* ignore */ }
     selfCheckDispose = null;
     try { dashClose?.(); } catch { /* ignore */ }

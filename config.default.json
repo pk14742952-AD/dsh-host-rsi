@@ -22,7 +22,9 @@
     "enabled": true,
     "maxPerSession": 10,
     "minChars": 120,
-    "dedupeThreshold": 0.8
+    "dedupeThreshold": 0.8,
+    "captureUserCorrections": true,
+    "captureUserInstructions": true
   },
   "escalate": {
     "enabled": true,

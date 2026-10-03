@@ -9,6 +9,10 @@
 
 仓库地址：<https://github.com/pk14742952-AD/dsh-host-rsi>
 
+> **插件简介**：这是一个给本地大模型用的 DSH 记忆 / 自进化插件。它在后台采集每次使用的
+> 成功、失败、用户纠正与长期偏好，把高价值经验沉淀为可信教训，并在下次遇到相似任务时自动注入。
+> 更新日志见 [CHANGELOG.md](./CHANGELOG.md)。
+
 > **想理解技术原理、或在自己环境复刻？** 读 [PRINCIPLES.md](./PRINCIPLES.md)
 > （专用文档：信号阶梯 / 反思循环 / 触发与效率 / 索引机制 / 与 AREX-2 的对应 / 复刻清单，逐点标注源码行号）。
 
@@ -37,6 +41,9 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 - **更强的自动触发**：宿主侧同时监听 `pre-step / turn-end / message` 的多个常见事件名（`agent/pre-step`、`message`、`chat/message` 等），谁存在就用谁，并用事件对象/内容去重，避免一轮触发两次。
 - **立刻能看到的反馈**：设置页和仪表板显示实时触发计数（事件/注入/捕获/失败）；即使尚未产生可信教训，普通工具失败也会留下**隔离记录**，让用户确认插件确实在工作。
 - **诊断与体验工具**：模型或用户可调用 `rsi_events` 查看触发诊断；`rsi_demo_capture` 可写一条示例教训，用于快速验证仪表板/设置页。
+- **用户纠正与长期指令会被记住**：当用户在一轮回复后给出明确纠正或新指令（例如“不要用 requests，改用 httpx”），
+  插件会把它记为 **L3 可信教训**。明确的长期偏好 / 规则（“以后都用 httpx”“请记住输出用简洁列表”）
+  也会在用户提出时记录为 `user-instruction` 可信教训；普通一次性任务请求不会写入记忆。
 - **教训后台自动搜集到本地插件目录**：`addLesson/addTrajectory` 立即写内存、**批量后台落盘**
   （`flushMs` 防抖）；目录不可写时**降级为纯内存**（`store.disabled`），插件不崩、照常工作。
 - **最小资源占用**：`index.json`+`termindex.json` 仅在打开时读一次，之后全内存；写入合并批处理；
@@ -147,7 +154,7 @@ node --test          # 纯逻辑 + 数据层套件（自动发现 test/*.test.js
 见 `config.default.json`：
 - `enabled`（总开关，false=完全空操作）、`dir`（数据目录）、`flushMs`（后台写入防抖 ms）；
 - `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`；
-- `capture.{enabled,maxPerSession,minChars,dedupeThreshold}`；
+- `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`；
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`；
 - `embeddings`（预留，默认 null；规模大了可换成嵌入近邻）。
 

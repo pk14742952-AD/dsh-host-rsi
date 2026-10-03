@@ -89,7 +89,7 @@ window.__ModuleLoader__.load({
           "\u53ef\u4fe1\u6559\u8bad ", s.totals.trusted, " \u00b7 \u9694\u79bb(\u5f85\u8bc1\u5b9e) ", s.totals.quarantined, " \u00b7 \u8f68\u8ff9 ", s.totals.trajectories, " \u00b7 \u603b\u6570 ", s.totals.lessons
         ) : null,
         s && s.runtime ? createElement("div", { style: { margin: "4px 0", opacity: 0.75 } },
-          "\u89e6\u53d1 \u4e8b\u4ef6 ", s.runtime.eventsSeen, " \u00b7 \u6ce8\u5165 ", s.runtime.injects, " \u00b7 \u6355\u83b7 ", s.runtime.captures, " \u00b7 \u5931\u8d25 ", s.runtime.failures,
+          "\u89e6\u53d1 \u4e8b\u4ef6 ", s.runtime.eventsSeen, " \u00b7 \u6ce8\u5165 ", s.runtime.injects, " \u00b7 \u6355\u83b7 ", s.runtime.captures, " \u00b7 \u7ea0\u6b63 ", (s.runtime.corrections ?? 0), " \u00b7 \u6307\u4ee4 ", (s.runtime.instructions ?? 0), " \u00b7 \u5931\u8d25 ", s.runtime.failures,
           s.runtime.lastEvent ? createElement("span", { style: { opacity: 0.7 } }, " \u00b7 \u6700\u8fd1 " + s.runtime.lastEvent + (s.runtime.lastReason ? " / " + s.runtime.lastReason : "")) : null
         ) : null,
         recs.length

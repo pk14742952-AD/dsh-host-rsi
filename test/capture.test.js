@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { captureFromContext } from '../lib/capture.js';
+import { captureFromContext, captureUserCorrection, captureUserInstruction } from '../lib/capture.js';
 
 test('self-REFUTED turn -> trusted corrective lesson with fix', () => {
   const r = captureFromContext({
@@ -48,4 +48,24 @@ test('generic tool failure without a self-tag still becomes a visible quarantine
   assert.equal(r.lesson.trusted, false);
   assert.equal(r.lesson.layer, 'Q');
   assert.match(r.lesson.summary, /tool failed/);
+});
+
+test('explicit user correction becomes a trusted L3 lesson', () => {
+  const r = captureUserCorrection({ taskText: '用 Python 写个脚本', correctionText: '不要用 requests，改用 httpx' });
+  assert.ok(r, 'user correction should capture');
+  assert.equal(r.capture, true);
+  assert.equal(r.lesson.layer, 'L3');
+  assert.equal(r.lesson.trusted, true);
+  assert.equal(r.lesson.domain, 'user-correction');
+  assert.match(r.lesson.summary, /User correction/);
+});
+
+test('explicit user instruction/preference becomes a trusted L3 lesson', () => {
+  const r = captureUserInstruction({ instructionText: '以后都用 httpx，不要用 requests' });
+  assert.ok(r, 'user instruction should capture');
+  assert.equal(r.capture, true);
+  assert.equal(r.lesson.layer, 'L3');
+  assert.equal(r.lesson.trusted, true);
+  assert.equal(r.lesson.domain, 'user-instruction');
+  assert.match(r.lesson.summary, /User instruction/);
 });

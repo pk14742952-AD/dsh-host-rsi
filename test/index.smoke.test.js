@@ -164,3 +164,83 @@ test('apply registers DSH event aliases + rsi_events/rsi_demo_capture diagnostic
 
   cleanup();
 });
+
+test('user correction after an assistant reply is captured as a trusted L3 lesson', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-correction-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserCorrections: true },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers.message({ role: 'user', sessionId: 's1', content: '写一个 Python 下载脚本' });
+  eventHandlers.message({ role: 'assistant', sessionId: 's1', content: '给你一个 requests 实现' });
+  eventHandlers.message({ role: 'user', sessionId: 's1', content: '不要用 requests，改用 httpx' });
+
+  const recs = await toolRuns.rsi_records({ limit: 10 });
+  const correction = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-correction') : null;
+  assert.ok(correction, 'user correction lesson should be recorded');
+  assert.equal(correction.trusted, true);
+  assert.equal(correction.layer, 'L3');
+
+  cleanup();
+});
+
+test('explicit user instruction/preference is captured as a trusted L3 lesson', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-instruction-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8, captureUserInstructions: true },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers.message({ role: 'user', sessionId: 's2', content: '以后都用 httpx，不要用 requests' });
+
+  const recs = await toolRuns.rsi_records({ limit: 10 });
+  const instruction = Array.isArray(recs) ? recs.find((r) => r.domain === 'user-instruction') : null;
+  assert.ok(instruction, 'user instruction lesson should be recorded');
+  assert.equal(instruction.trusted, true);
+  assert.equal(instruction.layer, 'L3');
+
+  cleanup();
+});

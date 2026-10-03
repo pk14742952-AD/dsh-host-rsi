@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate } from '../lib/policy.js';
+import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate, isUserCorrection, isUserInstruction } from '../lib/policy.js';
 
 const cfg = {
   capture: { enabled: true, maxPerSession: 20, minChars: 200, dedupeThreshold: 0.8 },
@@ -57,4 +57,21 @@ test('critic budget caps auto rounds', () => {
 test('isDuplicate threshold', () => {
   assert.equal(isDuplicate({ overlap: 0.85 }, cfg), true);
   assert.equal(isDuplicate({ overlap: 0.5 }, cfg), false);
+});
+
+test('user correction detection: explicit corrections and long instructions are captured', () => {
+  assert.equal(isUserCorrection({ correctionText: '不对，应该用 B 方案' }), true);
+  assert.equal(isUserCorrection({ correctionText: 'please use the other approach next time' }), true);
+  assert.equal(isUserCorrection({ correctionText: '不要再用这个模型输出格式' }), true);
+  assert.equal(isUserCorrection({ correctionText: 'ok' }), false);
+  assert.equal(isUserCorrection({ correctionText: '谢谢' }), false);
+});
+
+test('user instruction detection: durable rules/preferences are captured, one-off tasks are not', () => {
+  assert.equal(isUserInstruction({ instructionText: '以后都用 httpx，不要用 requests' }), true);
+  assert.equal(isUserInstruction({ instructionText: '请记住输出用简洁列表' }), true);
+  assert.equal(isUserInstruction({ instructionText: 'please remember to use pnpm next time' }), true);
+  assert.equal(isUserInstruction({ instructionText: '写一个 Python 下载脚本' }), false);
+  assert.equal(isUserInstruction({ instructionText: '帮我把这个文件转成 PDF' }), false);
+  assert.equal(isUserInstruction({ instructionText: 'ok' }), false);
 });
