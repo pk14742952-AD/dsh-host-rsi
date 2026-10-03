@@ -87,10 +87,10 @@ function sessionKey(event, ctx) {
   return event?.sessionId ?? event?.session?.id ?? ctx?.session?.id ?? '_global';
 }
 function taskText(event) {
-  return event?.task ?? event?.input?.text ?? event?.messages?.find?.((m) => m.role === 'user')?.content ?? (event?.role === 'user' ? event?.content : '') ?? '';
+  return event?.task ?? event?.input?.text ?? event?.messages?.find?.((m) => m.role === 'user')?.content ?? (event?.message?.role === 'user' ? event?.message?.content : '') ?? (event?.role === 'user' ? event?.content : '') ?? '';
 }
 function answerText(event) {
-  return event?.assistantText ?? event?.answer ?? event?.content ?? event?.messages?.filter?.((m) => m.role === 'assistant')?.map?.((m) => m.content).join('\n') ?? '';
+  return event?.assistantText ?? event?.answer ?? event?.message?.content ?? event?.content ?? event?.messages?.filter?.((m) => m.role === 'assistant')?.map?.((m) => m.content).join('\n') ?? '';
 }
 function toolResults(event) {
   const tr = event?.toolResults ?? event?.tools ?? [];
@@ -350,13 +350,13 @@ export function apply(ctx, config = {}) {
     recordEvent(source);
     try {
       const key = sessionKey(event, ctx);
-      const role = String(event?.role ?? event?.kind ?? event?.type ?? '').toLowerCase();
-      const content = String(event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
+      const role = String(event?.role ?? event?.kind ?? event?.type ?? event?.message?.role ?? '').toLowerCase();
+      const content = String(event?.message?.content ?? event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
       if (role && role.includes('user')) {
         lastUserBySession.set(key, { task: taskText(event) || content, at: Date.now() });
         return;
       }
-      const isAssistant = role.includes('assistant') || role.includes('bot') || role.includes('model') || !!event?.assistantText;
+      const isAssistant = role.includes('assistant') || role.includes('bot') || role.includes('model') || !!event?.assistantText || !!event?.message?.content;
       if (isAssistant) {
         const last = lastUserBySession.get(key);
         const merged = { ...event, task: event?.task || last?.task || '', sessionId: event?.sessionId ?? key, assistantText: event?.assistantText ?? content, content };
