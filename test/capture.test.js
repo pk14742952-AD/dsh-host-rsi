@@ -37,3 +37,15 @@ test('nothing to remember -> capture=false', () => {
   const r = captureFromContext({ task: { text: 'hi' }, answerText: 'hello' });
   assert.equal(r.capture, false);
 });
+
+test('generic tool failure without a self-tag still becomes a visible quarantined lesson', () => {
+  const r = captureFromContext({
+    task: { text: 'query the database' },
+    answerText: 'the query failed',
+    toolResults: [{ name: 'sql', ok: false }],
+  });
+  assert.equal(r.capture, true);
+  assert.equal(r.lesson.trusted, false);
+  assert.equal(r.lesson.layer, 'Q');
+  assert.match(r.lesson.summary, /tool failed/);
+});

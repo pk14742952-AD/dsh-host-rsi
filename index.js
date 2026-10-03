@@ -62,7 +62,7 @@ const Config = {
       compactTopK: 1,
       compactTokenBudget: 300,
     },
-    capture: { enabled: true, maxPerSession: 10, minChars: 300, dedupeThreshold: 0.8 },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
     escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
     dashboard: { enabled: true, host: '127.0.0.1', port: 0, recent: 15, webserver: true },
   },
@@ -87,15 +87,22 @@ function sessionKey(event, ctx) {
   return event?.sessionId ?? event?.session?.id ?? ctx?.session?.id ?? '_global';
 }
 function taskText(event) {
-  return event?.task ?? event?.input?.text ?? event?.messages?.find?.((m) => m.role === 'user')?.content ?? '';
+  return event?.task ?? event?.input?.text ?? event?.messages?.find?.((m) => m.role === 'user')?.content ?? (event?.role === 'user' ? event?.content : '') ?? '';
 }
 function answerText(event) {
-  return event?.assistantText ?? event?.answer ?? event?.messages?.filter?.((m) => m.role === 'assistant')?.map?.((m) => m.content).join('\n') ?? '';
+  return event?.assistantText ?? event?.answer ?? event?.content ?? event?.messages?.filter?.((m) => m.role === 'assistant')?.map?.((m) => m.content).join('\n') ?? '';
 }
 function toolResults(event) {
   const tr = event?.toolResults ?? event?.tools ?? [];
   return Array.isArray(tr) ? tr.map((t) => ({ name: t?.name, ok: t?.ok ?? t?.success })) : [];
 }
+
+// DSH event-name fallback set. DSH releases have called the same lifecycle moments by
+// different names (turn/end, agent/turn/end, chat/message, ...). We register as many as
+// exist and dedupe by event object / payload digest so a single real turn never double-fires.
+const PRE_STEP_EVENTS = ['agent/pre-step', 'pre-step', 'agent/step', 'session/step'];
+const TURN_END_EVENTS = ['turn/end', 'agent/turn/end', 'chat/turn/end', 'session/turn/end', 'turn/finish'];
+const MESSAGE_EVENTS = ['message', 'agent/message', 'chat/message', 'user/message', 'assistant/message', 'bot/message'];
 
 export function apply(ctx, config = {}) {
   const cfg = normalize(config);
@@ -107,13 +114,46 @@ export function apply(ctx, config = {}) {
   const store = openStore(cfg.dir, { flushMs: cfg.flushMs });
   store.ensureLayout();
 
+  // Live trigger diagnostics. This is what lets a user see the plugin working even
+  // before the lesson table fills up: how many lifecycle events were observed, how many
+  // injections/captures/failures happened, and what the last trigger was.
+  const runtime = {
+    startedAt: Date.now(),
+    sources: {},
+    eventsSeen: 0,
+    turnsSeen: 0,
+    injects: 0,
+    reInjects: 0,
+    captures: 0,
+    failures: 0,
+    critics: 0,
+    taskChanges: 0,
+    skippedCapture: 0,
+    lastEvent: null,
+    lastEventAt: null,
+    lastCapture: null,
+    lastInject: null,
+    lastReason: null,
+  };
+  const runtimeSnapshot = () => ({ ...runtime, sources: { ...runtime.sources } });
+  const recordEvent = (name) => {
+    runtime.sources[name] = (runtime.sources[name] || 0) + 1;
+    runtime.eventsSeen += 1;
+    runtime.lastEvent = name;
+    runtime.lastEventAt = Date.now();
+  };
+  const liveSnapshot = () => ({
+    ...snapshot(store, { enabled: cfg.enabled, recent: cfg.dashboard?.recent ?? 15 }),
+    runtime: runtimeSnapshot(),
+  });
+
   // (0) Optional self-hosted LOOPBACK dashboard (the "记忆" view). Idle-cheap (one listening
   //     socket; no CPU until a request); guarded so a bind failure never disturbs the host.
   //     The live URL is surfaced by the rsi_status tool below.
   let dashUrl = null;
   let dashClose = null;
   if (cfg.dashboard?.enabled !== false) {
-    startDashboardServer(store, cfg)
+    startDashboardServer(store, cfg, liveSnapshot)
       .then((h) => { dashUrl = h.url; dashClose = h.close; })
       .catch(() => {}); // bind failure -> dashboard simply unavailable, plugin still works
   }
@@ -135,7 +175,7 @@ export function apply(ctx, config = {}) {
             value: {
               url: dashUrl ?? undefined, // loopback dashboard (the "Web UI" the button opens)
               basePath: '/rsi/', // same-origin DSH-webserver base (for live status fetch)
-              status: snapshot(store, { enabled: cfg.enabled, recent: 5 }),
+              status: liveSnapshot(),
             },
           });
         } catch { /* never break index.html injection */ }
@@ -148,7 +188,7 @@ export function apply(ctx, config = {}) {
         const ws = sub?.webServer;
         if (!ws?.register) return; // service absent -> no-op
         try {
-          const dispose = ws.register({ kind: 'prefix', path: '/rsi', handler: rsiWebserverHandler(store, cfg) });
+          const dispose = ws.register({ kind: 'prefix', path: '/rsi', handler: rsiWebserverHandler(store, cfg, liveSnapshot) });
           if (typeof dispose === 'function') disposers.push(dispose);
         } catch { /* /rsi already owned by another plugin -> keep the loopback dashboard */ }
       });
@@ -187,13 +227,14 @@ export function apply(ctx, config = {}) {
         return false;
       }
     }
-    if (systemPrompt?.section) {
+    const sp = safeGet(event, 'systemPrompt') ?? systemPrompt;
+    if (sp?.section) {
       try {
         if (typeof s.injectDispose === 'function') {
           s.injectDispose();
           s.injectDispose = null;
         }
-        const d = systemPrompt.section({ key: 'rsi-inject', text: block });
+        const d = sp.section({ key: 'rsi-inject', text: block });
         if (typeof d === 'function') s.injectDispose = d;
         return true;
       } catch {
@@ -215,85 +256,140 @@ export function apply(ctx, config = {}) {
   };
   const hasFollowup = !!(safeGet(ctx, 'agent', 'followup') ?? safeGet(ctx, 'followup'));
 
-  // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
-  const systemPrompt = safeGet(ctx, 'systemPrompt');
-  if (systemPrompt?.section) {
-    const d = systemPrompt.section({ key: 'rsi-selfcheck', text: buildSelfCheckInstruction() });
-    if (typeof d === 'function') disposers.push(d);
+  // Shared lifecycle helpers. These are API-shape agnostic: they read whatever field
+  // DSH exposes (task / input.text / messages / content / assistantText), dedupe by
+  // event object or payload digest, and no-op on any unknown shape.
+  const seenEvents = new WeakSet();
+  const seenDigests = new Map();
+  const lastUserBySession = new Map();
+  let selfCheckDispose = null;
+
+  function eventDigest(event, key) {
+    const s = `${String(taskText(event))}\x00${String(answerText(event))}`;
+    let h = 0;
+    for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+    return `${key}:${h}`;
   }
 
-  // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
-  //     change, then only small re-injections when the same task fails and reinjectOn
-  //     enables that path. oncePerTask=true restores the old strict single-inject mode.
-  if (cfg.inject.enabled && ctx?.on) {
-    ctx.on('agent/pre-step', (event, next) => {
-      try {
-        const key = sessionKey(event, ctx);
-        const task = taskText(event);
-        const s = sess(key);
-        if (task && task !== s.lastTask) {
-          s.lastTask = task;
-          s.lastTaskInjectCount = 0;
-          s.failureStreak = 0;
-          s.pendingReinject = false;
-          s.reinjectQuery = '';
-          const opts = cfg.inject.oncePerTask
-            ? cfg.inject
-            : { ...cfg.inject, topK: cfg.inject.topK, tokenBudget: cfg.inject.tokenBudget };
-          if (pushInjection(s, event, task, opts)) s.lastTaskInjectCount += 1;
-        } else if (
-          !cfg.inject.oncePerTask &&
-          task &&
-          s.lastTask === task &&
-          s.lastTaskInjectCount < (cfg.inject.maxInjectsPerTask ?? 2)
-        ) {
-          const toolReinject = s.pendingReinject && reinjectAllowed('tool-failure');
-          const repeatReinject = s.failureStreak >= 2 && reinjectAllowed('repeated-failure');
-          if (toolReinject || repeatReinject) {
-            const query = s.reinjectQuery || task;
-            const opts = {
-              ...cfg.inject,
-              topK: cfg.inject.compactTopK ?? 1,
-              tokenBudget: cfg.inject.compactTokenBudget ?? 300,
-            };
-            if (pushInjection(s, event, query, opts)) {
-              s.lastTaskInjectCount += 1;
-              s.pendingReinject = false;
-            }
+  function markSeen(event, key) {
+    if (event && typeof event === 'object') {
+      if (seenEvents.has(event)) return true;
+      seenEvents.add(event);
+      return false;
+    }
+    const d = eventDigest(event, key);
+    const now = Date.now();
+    if (seenDigests.has(d) && now - seenDigests.get(d) < 2500) return true;
+    seenDigests.set(d, now);
+    return false;
+  }
+
+  function ensureSelfCheck(event) {
+    const sp = safeGet(event, 'systemPrompt') ?? systemPrompt;
+    if (!sp?.section) return;
+    try {
+      if (typeof selfCheckDispose === 'function') selfCheckDispose();
+      const d = sp.section({ key: 'rsi-selfcheck', text: buildSelfCheckInstruction() });
+      if (typeof d === 'function') selfCheckDispose = d;
+    } catch { /* systemPrompt.section unavailable -> no-op */ }
+  }
+
+  function handlePreStep(event, source) {
+    recordEvent(source);
+    try {
+      const key = sessionKey(event, ctx);
+      const task = taskText(event);
+      const s = sess(key);
+      if (!task) return;
+      ensureSelfCheck(event);
+      if (task !== s.lastTask) {
+        s.lastTask = task;
+        s.lastTaskInjectCount = 0;
+        s.failureStreak = 0;
+        s.pendingReinject = false;
+        s.reinjectQuery = '';
+        runtime.taskChanges += 1;
+        const opts = cfg.inject.oncePerTask
+          ? cfg.inject
+          : { ...cfg.inject, topK: cfg.inject.topK, tokenBudget: cfg.inject.tokenBudget };
+        if (pushInjection(s, event, task, opts)) {
+          s.lastTaskInjectCount += 1;
+          runtime.injects += 1;
+          runtime.lastInject = task;
+        }
+      } else if (
+        !cfg.inject.oncePerTask &&
+        task &&
+        s.lastTask === task &&
+        s.lastTaskInjectCount < (cfg.inject.maxInjectsPerTask ?? 2)
+      ) {
+        const toolReinject = s.pendingReinject && reinjectAllowed('tool-failure');
+        const repeatReinject = s.failureStreak >= 2 && reinjectAllowed('repeated-failure');
+        if (toolReinject || repeatReinject) {
+          const query = s.reinjectQuery || task;
+          const opts = {
+            ...cfg.inject,
+            topK: cfg.inject.compactTopK ?? 1,
+            tokenBudget: cfg.inject.compactTokenBudget ?? 300,
+          };
+          if (pushInjection(s, event, query, opts)) {
+            s.lastTaskInjectCount += 1;
+            s.pendingReinject = false;
+            runtime.reInjects += 1;
+            runtime.injects += 1;
+            runtime.lastInject = task;
           }
         }
-      } catch {
-        /* never block the waterfall */
       }
-      return next?.(); // forward the waterfall unless we own the decision
-    });
+    } catch {
+      /* never block the waterfall */
+    }
   }
 
-  // (3) turn/end: failure tracking for balanced injection, plus gated capture and
-  //     auto-escalate. Capture is short-circuited by shouldCapture BEFORE persistence;
-  //     addLesson/addTrajectory only enqueue a backgrounded flush (no blocking I/O).
-  if (ctx?.on) {
-    ctx.on('turn/end', (event) => {
-      try {
-        const key = sessionKey(event, ctx);
-        const s = sess(key);
-        const task = taskText(event);
-        const answer = answerText(event);
-        const tools = toolResults(event);
+  function handleMessage(event, source) {
+    recordEvent(source);
+    try {
+      const key = sessionKey(event, ctx);
+      const role = String(event?.role ?? event?.kind ?? event?.type ?? '').toLowerCase();
+      const content = String(event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
+      if (role && role.includes('user')) {
+        lastUserBySession.set(key, { task: taskText(event) || content, at: Date.now() });
+        return;
+      }
+      const isAssistant = role.includes('assistant') || role.includes('bot') || role.includes('model') || !!event?.assistantText;
+      if (isAssistant) {
+        const last = lastUserBySession.get(key);
+        const merged = { ...event, task: event?.task || last?.task || '', sessionId: event?.sessionId ?? key, assistantText: event?.assistantText ?? content, content };
+        handleTurnEnd(merged, source + ':assistant');
+      }
+    } catch { /* never block the event */ }
+  }
 
-        if (task && task === s.lastTask) {
-          const hadFailure = outcomeSignal({ taskText: task, answerText: answer, toolResults: tools }).hadFailure;
-          if (hadFailure) {
-            s.failureStreak += 1;
-            s.pendingReinject = true;
-            const failedNames = tools.filter((t) => t && t.ok === false).map((t) => t.name).filter(Boolean);
-            s.reinjectQuery = [task, ...failedNames].filter(Boolean).join(' ');
-          } else {
-            s.failureStreak = 0;
-          }
+  function handleTurnEnd(event, source) {
+    recordEvent(source);
+    const key = sessionKey(event, ctx);
+    if (markSeen(event, key)) return;
+    try {
+      const s = sess(key);
+      const task = taskText(event);
+      const answer = answerText(event);
+      const tools = toolResults(event);
+      runtime.turnsSeen += 1;
+
+      if (task && task === s.lastTask) {
+        const sig = outcomeSignal({ taskText: task, answerText: answer, toolResults: tools });
+        if (sig.hadFailure) {
+          s.failureStreak += 1;
+          runtime.failures += 1;
+          s.pendingReinject = true;
+          const failedNames = tools.filter((t) => t && t.ok === false).map((t) => t.name).filter(Boolean);
+          s.reinjectQuery = [task, ...failedNames].filter(Boolean).join(' ');
+        } else {
+          s.failureStreak = 0;
         }
+      }
 
-        if (cfg.capture.enabled) {
+      if (cfg.capture.enabled) {
         const r = captureFromContext({
           task: { text: task },
           answerText: answer,
@@ -301,26 +397,66 @@ export function apply(ctx, config = {}) {
           userTap: event?.userTap,
           threshold: cfg.escalate.threshold,
         });
-        if (shouldCapture({ taskText: task, answerText: answer, toolResults: tools, cfg, session: s, existingTop: store.findSimilar(r.lesson, 8) })) {
-          if (r.capture) {
-            store.addLesson({ ...r.lesson, sourceRef: event?.id ?? null }); // enqueues background write
-            store.addTrajectory({ ...r.trajectory, id: event?.id ?? undefined });
-            s.captures += 1;
-          }
+        const sig = outcomeSignal({ taskText: task, answerText: answer, toolResults: tools });
+        runtime.lastReason = sig.hasVerifyTag ? 'verify-tag' : sig.hadFailure ? 'failure' : sig.ranTools ? 'tool-run' : 'decision';
+        const existingTop = store.findSimilar(r.lesson, 8);
+        if (r.capture && shouldCapture({ taskText: task, answerText: answer, toolResults: tools, cfg, session: s, existingTop })) {
+          store.addLesson({ ...r.lesson, sourceRef: event?.id ?? null }); // enqueues background write
+          store.addTrajectory({ ...r.trajectory, id: event?.id ?? undefined });
+          s.captures += 1;
+          runtime.captures += 1;
+          runtime.lastCapture = task;
+
           const esc = shouldEscalate({ scorer: r.scorer, verdict: r.tag?.verdict, conf: r.tag?.conf, tag: r.tag, threshold: cfg.escalate.threshold });
           if (esc.do && hasFollowup && criticBudgetOk({ cfg, session: s })) {
             const n = cfg.escalate.selfConsistency ?? 1;
             for (let i = 0; i < n && s.critics < (cfg.escalate.maxCriticsPerSession ?? 4); i += 1) {
               followup(criticPrompt(task, answer));
               s.critics += 1;
+              runtime.critics += 1;
             }
           }
+        } else if (sig.hasVerifyTag || sig.hadFailure || sig.ranTools) {
+          runtime.skippedCapture += 1;
         }
-        }
-      } catch {
-        /* capture must never crash the turn */
       }
-    });
+    } catch {
+      /* capture must never crash the turn */
+    }
+  }
+
+  // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
+  const systemPrompt = safeGet(ctx, 'systemPrompt');
+  ensureSelfCheck({});
+
+  // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
+  //     change, then only small re-injections when the same task fails and reinjectOn
+  //     enables that path. oncePerTask=true restores the old strict single-inject mode.
+  if (cfg.inject.enabled && ctx?.on) {
+    for (const name of PRE_STEP_EVENTS) {
+      try {
+        ctx.on(name, (event, next) => {
+          handlePreStep(event, name);
+          return next?.();
+        });
+      } catch { /* host may not expose this event -> no-op */ }
+    }
+  }
+
+  // (3) turn/end: failure tracking for balanced injection, plus gated capture and
+  //     auto-escalate. Capture is short-circuited by shouldCapture BEFORE persistence;
+  //     addLesson/addTrajectory only enqueue a backgrounded flush (no blocking I/O).
+  if (ctx?.on) {
+    for (const name of TURN_END_EVENTS) {
+      try {
+        ctx.on(name, (event) => handleTurnEnd(event, name));
+      } catch { /* host may not expose this event -> no-op */ }
+    }
+    for (const name of MESSAGE_EVENTS) {
+      try {
+        ctx.on(name, (event) => handleMessage(event, name));
+      } catch { /* host may not expose this event -> no-op */ }
+    }
   }
 
   // (5) Optional forced deep-verify tool (user requests it explicitly).
@@ -352,7 +488,7 @@ export function apply(ctx, config = {}) {
       description: 'Show DSH-host-RSI status: enabled/degraded, lesson totals (trusted/quarantined/trajectories), layer breakdown, recent records, and the live dashboard URL.',
       run: async () => {
         try {
-          const snap = snapshot(store, { enabled: cfg.enabled, recent: 8 });
+          const snap = liveSnapshot();
           return formatStatusReport(snap, dashUrl); // bili-style: 文本报告 + "可点击仪表板/状态" 行
         } catch (e) {
           return { enabled: cfg.enabled, error: String(e && e.message) };
@@ -373,6 +509,40 @@ export function apply(ctx, config = {}) {
       },
     });
     if (typeof rd === 'function') disposers.push(rd);
+
+    // (7) Diagnostics + demo tools. rsi_events gives a human/agent-readable view of the
+    //     trigger path; rsi_demo_capture writes one sample trusted lesson so new users can
+    //     immediately see the dashboard/settings page render real data (demo/testing only).
+    const ed = tools.register({
+      name: 'rsi_events',
+      description: 'Show plugin trigger diagnostics: lifecycle event names seen, turn/inject/capture/failure counters, and the last event.',
+      run: async () => runtimeSnapshot(),
+    });
+    if (typeof ed === 'function') disposers.push(ed);
+
+    const dd = tools.register({
+      name: 'rsi_demo_capture',
+      description: 'Add one sample trusted lesson to the RSI memory (for demo/testing) so the dashboard and settings tab have visible data immediately.',
+      run: async () => {
+        try {
+          const id = store.addLesson({
+            domain: 'demo',
+            tags: ['demo', 'rsi'],
+            summary: 'RSI demo: plugin is running and recording data',
+            fix: 'Run a real task next; trusted lessons are injected on similar future work',
+            layer: 'L2',
+            trusted: true,
+            weight: 0.8,
+          });
+          store.addTrajectory({ id: id ? `${id}-demo` : undefined, ts: Date.now(), task: 'demo', domain: 'demo', lesson: 'sample demo lesson', layer: 'L2', trusted: true });
+          store.flushSync();
+          return { ok: true, id, note: 'sample trusted lesson added (visible in settings/dashboard)' };
+        } catch (e) {
+          return { ok: false, error: String(e && e.message) };
+        }
+      },
+    });
+    if (typeof dd === 'function') disposers.push(dd);
   }
 
   // cleanup: best-effort background flush + stop timers; never throw into the host.
@@ -386,6 +556,10 @@ export function apply(ctx, config = {}) {
     }
     disposers.length = 0;
     sessions.clear();
+    seenDigests.clear();
+    lastUserBySession.clear();
+    try { selfCheckDispose?.(); } catch { /* ignore */ }
+    selfCheckDispose = null;
     try { dashClose?.(); } catch { /* ignore */ }
     try {
       store.close();

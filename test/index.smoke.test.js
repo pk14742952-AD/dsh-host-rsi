@@ -126,3 +126,41 @@ test('oncePerTask=true restores strict single injection for the same task', () =
 
   cleanup();
 });
+
+test('apply registers DSH event aliases + rsi_events/rsi_demo_capture diagnostic tools', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-fallback-'));
+  const eventNames = [];
+  const toolNames = [];
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventNames.push(name);
+      ctx.events[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register(opts) {
+        toolNames.push(opts.name);
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  for (const name of ['agent/pre-step', 'pre-step', 'turn/end', 'agent/turn/end', 'message', 'agent/message', 'chat/message']) {
+    assert.ok(eventNames.includes(name), `expected fallback event ${name}`);
+  }
+  assert.ok(toolNames.includes('rsi_events'), 'rsi_events diagnostic tool should be registered');
+  assert.ok(toolNames.includes('rsi_demo_capture'), 'rsi_demo_capture tool should be registered');
+
+  cleanup();
+});

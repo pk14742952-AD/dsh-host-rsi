@@ -21,7 +21,7 @@
   "capture": {
     "enabled": true,
     "maxPerSession": 10,
-    "minChars": 300,
+    "minChars": 120,
     "dedupeThreshold": 0.8
   },
   "escalate": {

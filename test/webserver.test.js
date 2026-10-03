@@ -94,6 +94,7 @@ test('apply() injects __RSI__ global + registers /rsi prefix route on the webser
   assert.equal(rsiRow.kind, 'global');
   assert.equal(rsiRow.value.basePath, '/rsi/');
   assert.ok(rsiRow.value.status && typeof rsiRow.value.status.totals === 'object', '__RSI__ carries a status snapshot');
+  assert.ok(rsiRow.value.status.runtime && typeof rsiRow.value.status.runtime.eventsSeen === 'number', '__RSI__ carries live trigger diagnostics');
   assert.ok(registers.some((o) => o.kind === 'prefix' && o.path === '/rsi'), 'a /rsi prefix route was registered on the DSH webserver');
   dispose();
 });

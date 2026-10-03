@@ -32,7 +32,8 @@ The core ideas of this project are drawn from and credit the following public wo
 
 After restarting DSH, open **Settings > Plugins > DSH HOST RSI Memory** and click **Open dashboard** to inspect
 plugin status (enabled/degraded, trusted/quarantined/trajectory, recent records). The page polls `status.json`
-every 3 seconds.
+every 3 seconds and shows live trigger diagnostics: events seen, injections, captures, failure signals, and the
+last event/reason.
 
 You can also run the standalone demo locally without DSH:
 
@@ -45,9 +46,14 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 
 - **No impact on the model or DSH**: all reads go through in-memory cache; disk I/O only happens during
   debounced background writes. Hot paths (`pre-step` / `turn-end`) never block.
-- **Automatic triggering only at the right moments**: injection is once per turn (gated by task-change);
-  capture happens only at `turn/end` when `policy.js` passes; critic rounds start automatically only when the
-  cheap method fails or the user forces them.
+- **Stronger automatic triggering**: the host listens for common lifecycle event names across DSH releases
+  (`agent/pre-step`, `turn/end`, `message`, `chat/message`, etc.), uses whichever exists, and dedupes by event
+  object/content so a real turn never fires twice.
+- **Immediate visible feedback**: the settings tab and dashboard show live trigger counters (events/injects/
+  captures/failures). Even before a trusted lesson exists, ordinary tool failures leave a visible quarantined
+  record, so users can confirm the plugin is actually watching.
+- **Diagnostic and demo tools**: call `rsi_events` to inspect live trigger state, or `rsi_demo_capture` to add
+  one sample trusted lesson for a quick dashboard/settings check.
 - **Lessons are collected to the local plugin directory in the background**: `addLesson` / `addTrajectory`
   write to memory immediately and batch-flush to disk (`flushMs` debounce). If the directory is not writable,
   the plugin degrades to pure memory (`store.disabled`) without crashing.
