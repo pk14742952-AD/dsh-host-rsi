@@ -42,8 +42,11 @@ console.log(control.trim());
 console.log('\nWITH RSI LESSON:');
 console.log(withLesson.trim());
 
-assert.match(control, /\brequests\b/, 'control should use requests without the lesson');
+// Some local 27B builds naturally reach for urllib.request instead of requests,
+// so accept either legacy HTTP client here. The important proof is that the
+// injected lesson changes the output to httpx and suppresses the legacy client.
+assert.match(control, /\brequests\b|\burllib\.request\b/, 'control should use a legacy HTTP client without the lesson');
 assert.match(withLesson, /\bhttpx\b/, 'injected lesson should push the model to httpx');
-assert.doesNotMatch(withLesson, /import requests/, 'with the lesson the model must not fall back to requests');
+assert.doesNotMatch(withLesson, /import requests|import urllib\.request/, 'with the lesson the model must not fall back to a legacy HTTP client');
 
 console.log('\nOK: the injected lesson changed the model output.');
