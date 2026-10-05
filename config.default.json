@@ -1,7 +1,7 @@
 {
-  "$comment": "DSH host RSI 配置默认值（bundle 行配置可覆盖）。dir 为人可读的记忆目录（权威源 + 倒排索引）。enabled=false 时插件完全空操作；flushMs 为后台写入的防抖间隔（ms）。",
+  "$comment": "DSH host RSI 配置默认值（bundle 行配置可覆盖）。dir 为人可读的记忆目录（权威源 + 倒排索引），省略时默认 ~/.dsh/rsi-memory（DSH_HOME 环境变量可覆盖），不再写死盘符。enabled=false 时插件完全空操作；flushMs 为后台写入的防抖间隔（ms）。",
   "enabled": true,
-  "dir": "E:\\DSH\\.rsi-memory",
+  "dir": null,
   "flushMs": 1000,
   "inject": {
     "topK": 3,

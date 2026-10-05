@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-10-05
+
+### Fixed
+
+- The default data `dir` no longer hardcodes a drive letter (`E:\DSH\.rsi-memory`), which
+  created an unexpected folder on the E: drive for every user who installed the plugin.
+  The default now follows the DSH home convention: `~/.dsh/rsi-memory`, overridable via the
+  `DSH_HOME` environment variable (the same var DSH's host reads) or an explicit `dir` in
+  the bundle row config.
+- One-time migration: when the legacy `E:\DSH\.rsi-memory` still exists and the new default
+  dir does not, its lessons/index/trajectories are copied over on first activation
+  (best-effort; `RSI_LEGACY_DIR` env overrides the legacy location for testing).
+
 ## [0.1.11] - 2026-10-03
 
 ### Fixed

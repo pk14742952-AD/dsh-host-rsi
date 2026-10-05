@@ -120,7 +120,7 @@ dsh-host-rsi/          # plugin package (code)
     dashboard.js       # dashboardHtml + /rsi/* webserver handler + standalone dashboard server
   locale/              # settings i18n (zh/en)
   test/                # node:test suite (including webserver/client host integration tests)
-E:\DSH\.rsi-memory\     # data directory (human-readable source of truth)
+~/.dsh/rsi-memory/     # data directory (human-readable source of truth; DSH_HOME env overrides)
   index.json  termindex.json
   lessons/<domain>.md    # trusted, human-curatable
   quarantined/<domain>.md # unverified, promoted later

@@ -4,7 +4,7 @@
 //
 //   node demo-serve.mjs            # http://127.0.0.1:8788
 //   RSI_DEMO_PORT=9000 node demo-serve.mjs
-//   RSI_DEMO_DIR=E:\DSH\.rsi-memory node demo-serve.mjs   # point at the REAL store
+//   RSI_DEMO_DIR=/path/to/.rsi-memory node demo-serve.mjs   # point at the REAL store
 
 import http from 'node:http';
 import fs from 'node:fs';

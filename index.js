@@ -15,6 +15,8 @@
 // and is unit-tested independently of this glue.
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
@@ -51,10 +53,33 @@ function safeGet(obj, ...props) {
 // NOT exported: cordis resolveConfig() calls runtime.Config["~standard"].validate() which
 // crashes on a plain object. By not exporting, resolveConfig sees !runtime.Config and
 // returns the config as-is (no validation). This matches billion-context's pattern.
+
+// Default data dir follows the DSH home convention (~/.dsh, like DSH's own storages and
+// billion-context's homedir-based paths) instead of a hardcoded drive letter: a hardcoded
+// path creates an unexpected folder on that drive for every user who installs the plugin.
+// Resolution order: DSH_HOME env (same var DSH's host.js reads) -> os.homedir().
+function defaultDir() {
+  const home = (process.env.DSH_HOME && process.env.DSH_HOME.trim()) || os.homedir();
+  return path.join(home, '.dsh', 'rsi-memory');
+}
+// One-time migration from the pre-0.1.12 hardcoded default. If the legacy dir has data
+// and the new default dir does not exist yet, copy it over so users keep their lessons.
+// RSI_LEGACY_DIR env overrides the legacy location (for testing).
+function migrateLegacyDir(target) {
+  const legacy = (process.env.RSI_LEGACY_DIR && process.env.RSI_LEGACY_DIR.trim()) || path.join('E:\\', 'DSH', '.rsi-memory');
+  try {
+    if (!fs.existsSync(legacy) || fs.existsSync(target)) return;
+    if (path.resolve(legacy).toLowerCase() === path.resolve(target).toLowerCase()) return;
+    fs.cpSync(legacy, target, { recursive: true, force: false, errorOnExist: false });
+  } catch {
+    /* migration is best-effort: store degrades gracefully on failure */
+  }
+}
+
 const Config = {
   defaults: {
     enabled: true, // global master switch (false = full no-op)
-    dir: 'E:\\DSH\\.rsi-memory',
+    dir: null, // resolved at apply() time via defaultDir() (DSH_HOME/homedir aware)
     flushMs: 1000, // background write debounce
     inject: {
       enabled: true,
@@ -82,7 +107,7 @@ function normalize(config = {}) {
   const merge = (a, b) => ({ ...a, ...(b || {}) });
   return {
     enabled: config.enabled !== false,
-    dir: config.dir || d.dir,
+    dir: config.dir || defaultDir(),
     flushMs: typeof config.flushMs === 'number' ? config.flushMs : d.flushMs,
     inject: merge(d.inject, config.inject),
     capture: merge(d.capture, config.capture),
@@ -199,6 +224,10 @@ export function apply(ctx, config = {}) {
   // Master switch off -> full no-op, zero host interaction.
   if (cfg.enabled === false) return () => {};
 
+  // Migration must run BEFORE openStore: openStore creates the dir layout, and
+  // migrateLegacyDir skips copying when the target already exists. Only skip when the
+  // user chose an explicit dir in config — a DSH_HOME-set default is still auto-migrated.
+  if (!config.dir) migrateLegacyDir(cfg.dir);
   const store = openStore(cfg.dir, { flushMs: cfg.flushMs });
   store.ensureLayout();
 

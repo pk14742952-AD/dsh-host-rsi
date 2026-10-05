@@ -151,7 +151,7 @@
 
 ## 6. 索引机制（快速定位内部记忆）
 
-数据目录（默认 `E:\DSH\.rsi-memory\`，`store.js` `openStore`）：
+数据目录（默认 `~/.dsh/rsi-memory/`，`DSH_HOME` 环境变量可覆盖；`store.js` `openStore`；不写死盘符，与 DSH 本体 `~/.dsh` 约定一致）：
 
 ```
 .rsi-memory/
@@ -269,7 +269,7 @@
 ```jsonc
 {
   "enabled": true,                       // 总开关；false = 完全空操作
-  "dir": "E:\\DSH\\.rsi-memory",
+  "dir": null,                           // 默认 ~/.dsh/rsi-memory（DSH_HOME 可覆盖），不写死盘符
   "flushMs": 500,                        // 后台写入防抖间隔（ms）
   "inject":   { "topK": 4, "tokenBudget": 1500, "candCap": 40, "enabled": true, "includeQuarantined": false },
   "capture":  { "enabled": true, "maxPerSession": 20, "minChars": 200, "dedupeThreshold": 0.8 },

@@ -153,3 +153,22 @@ test('batched flush coalesces many writes into one disk pass', () => {
   assert.equal(idxAfter.length, 3);
   store.close();
 });
+
+test('flush retry: an unwritable trajectory batch does not drop queued mirror appends', () => {
+  const { store, dir } = tmpStore({ flushMs: 100000 });
+  store.addLesson({ domain: 'd', tags: ['k'], summary: 'mirror must survive a failing traj', trusted: true });
+  store.addTrajectory({ ts: 1, task: 't', domain: 'd', lesson: 'raw trace' });
+  // Break ONLY the trajectories dir after layout creation (ensureLayout already ran with
+  // a healthy layout): replace it with a file so every trajectory append throws while
+  // index.json + lessons/ stay writable.
+  fs.rmSync(path.join(dir, 'trajectories'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(dir, 'trajectories'), 'x', 'utf8');
+  store.flushSync(); // index+mirror ok, trajectory append throws
+  const idx = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
+  assert.equal(idx.length, 1, 'index row persisted despite trajectory failure');
+  assert.ok(
+    fs.readFileSync(path.join(dir, 'lessons', 'd.md'), 'utf8').includes('mirror must survive a failing traj'),
+    'mirror append persisted despite trajectory failure',
+  );
+  store.close();
+});

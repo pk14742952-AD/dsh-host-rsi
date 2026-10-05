@@ -95,7 +95,7 @@ dsh-host-rsi/            # 插件包（代码）
     dashboard.js         # dashboardHtml + /rsi/* webserver handler + 本机 dashboard server
   locale/                # 设置标签 i18n（zh/en）
   test/                  # node:test 套件（含 webserver/client 宿主集成测试）
-E:\DSH\.rsi-memory\      # 数据目录（人可读的权威源）
+~/.dsh/rsi-memory/      # 数据目录（人可读的权威源；DSH_HOME 环境变量可覆盖）
   index.json  termindex.json
   lessons/<domain>.md    # 可信，可人工策展
   quarantined/<domain>.md# 未验证，日后转正
