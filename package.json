@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -30,6 +30,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "test:e2e": "node test/e2e-model-injection.mjs"
   },
   "icon": "./icon.svg",

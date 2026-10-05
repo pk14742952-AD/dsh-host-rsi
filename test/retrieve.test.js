@@ -34,3 +34,14 @@ test('estimateTokens is a rough length/4', () => {
   assert.equal(estimateTokens('abcd'), 1);
   assert.equal(estimateTokens(''), 0);
 });
+
+test('CJK: space-free Chinese query matches a space-separated Chinese lesson', () => {
+  const zh = [
+    { id: 'z1', tags: ['python'], summary: '写一个 Python 下载脚本时用 httpx 不要用 requests', layer: 'L2', trusted: true, updatedAt: 1 },
+    { id: 'z2', tags: ['css'], summary: 'flexbox gap', layer: 'L2', trusted: true, updatedAt: 2 },
+  ];
+  // Query has NO spaces between Chinese words; lesson summary uses spaces around latin.
+  const out = retrieve(zh, '写python下载脚本用httpx', { topK: 5 });
+  assert.ok(out && out.includes('httpx'), 'CJK unigram tokenize must let a space-free query hit a spaced lesson');
+  assert.doesNotMatch(out, /flexbox/);
+});

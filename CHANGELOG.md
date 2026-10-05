@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13] - 2026-10-05
+
+### Fixed
+
+- Chinese retrieval was effectively broken: a space-free CJK string ("写一个Python下载脚本")
+  was tokenized as ONE giant term, so queries sharing only single Chinese characters scored
+  zero overlap. `tokenize()` now also emits CJK unigrams, fixing both the inverted-index
+  candidate step and the relevance ranking for Chinese lessons. Regression test added.
+- `codeScorer` had a `match`/`check` regex mismatch (match accepted `tsc|node`, check did
+  not), which made those tool names match but never count as definitive L1 checks.
+  Unified both on the same tool set.
+
+### Changed
+
+- `collectStorage` (data-dir walk) is now cached for 5s, so the dashboard's status poll
+  and the settings tab no longer re-stat the whole data dir on every fetch.
+- Added a `test` npm script (`node --test test/*.test.js`) so `npm test` runs the full
+  unit suite; the model-dependent e2e stays behind `npm run test:e2e`.
+
 ## [0.1.12] - 2026-10-05
 
 ### Fixed
