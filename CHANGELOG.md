@@ -36,6 +36,9 @@ All notable changes to this project are documented here. The format is based on
   resolve to a `project:` tag, retrieval now filters stopwords and ranks by IDF, and
   standing project rules are injected first by scope.
 - README (zh/en) now opens with a welcome note inviting Issues/PRs and a star.
+- README (zh/en) documents the round-2 evaluation and known limits (issue #4): cross-session
+  memory was reproduced (0/5 -> 5/5), while the self-check showed no significant gain on one
+  strong API model and still awaits the target local 27B replication run.
 
 ## [0.1.13] - 2026-10-05
 

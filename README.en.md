@@ -201,6 +201,19 @@ See `config.default.json`:
 
 Defaults are conservative for local models.
 
+## Evaluation & known limits
+
+- **Cross-session memory** was reproduced end-to-end: 0/5 held-out tasks without the plugin,
+  5/5 with it (Fisher exact p = 0.0079), so trusted lessons are demonstrably injected across
+  sessions and change behavior.
+- **Self-check (the `[VERIFY]` counter-reason trailer)** showed no significant accuracy gain
+  in one large-N evaluation (`deepseek-v4.1-flash`, ~350 runs/arm). That result is **not a
+  verdict**: the target remains a local 27B model (Qwen3.8-27B), which still needs an on-device
+  replication run.
+- If you use **JSON Schema / structured output**, set `inject.selfCheck` to `false` so the
+  mandated trailer cannot turn a correct answer into an unparseable one (see #3 / #4).
+- Original evaluation report: [issue #4](https://github.com/pk14742952-AD/dsh-host-rsi/issues/4).
+
 ## License Compliance
 
 - This project (`dsh-host-rsi`) is MIT, see [LICENSE](./LICENSE).

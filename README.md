@@ -171,6 +171,17 @@ npm test             # 纯逻辑 + 数据层套件（node --test test/*.test.js�
 
 默认值对本地模型偏保守。
 
+## 评估与已知边界
+
+- **跨会话记忆**已做端到端复现：同一批隐藏任务，无插件 0/5，插件 5/5（Fisher 精确检验
+  p=0.0079），说明可信教训确实能跨会话注入并改变行为。
+- **自检（`[VERIFY]` 反问尾行）**在一套大样本评估（`deepseek-v4.1-flash`，约 350 轮/组）中
+  未见显著准确率提升；该结果**不是最终结论**，因为目标模型仍是本地 27B（Qwen3.8-27B），
+  需要等本地 27B 实机复测。
+- 如果你使用 **JSON Schema / 结构化输出**，请把 `inject.selfCheck` 设为 `false`，
+  避免强制尾行把正确结果变成不可解析输出（详见 #3 / #4）。
+- 原始评估报告：[issue #4](https://github.com/pk14742952-AD/dsh-host-rsi/issues/4)。
+
 ## 开源协议（License 合规）
 
 - **本项目（`dsh-host-rsi`）采用 MIT 协议**，见 [LICENSE](./LICENSE)。
