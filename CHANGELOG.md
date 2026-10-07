@@ -12,8 +12,9 @@ All notable changes to this project are documented here. The format is based on
   passing tests / build / API checks no longer get re-run endlessly. The plugin watches
   `tools/post-execute`, resets the counter on any `edit` / `write`, and steers the model to
   converge: a soft steer after the same check repeats, a strong steer as soon as multiple check
-  families have all passed. Model-gated by default (`*27b*`, covering Qwen3.8-27B variants), and
-  the completion policy section is injected only for matching models.
+  families have all passed. Enabled for **every model** by default; users can restrict steering
+  to a whitelist such as `["*27b*"]` via `convergence.models`, and the completion policy
+  section is injected only for the same active set.
 - L3 delivery guard (from the `D:\ninfer` 04/05 卡死与循环防治方案): host-side five-state
   detection of `EMPTY` / `TRUNCATED` / `FIXED_POINT` / `SAME_PLAN` / `SHELL_LOOP` after an
   assistant turn. A rejected turn schedules a correction round via `agent.followup` instead of

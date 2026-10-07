@@ -15,7 +15,7 @@
     "memory",
     "local-llm"
   ],
-  "description": "Model-agnostic DSH host plugin for continual self-improvement: per-use self-check, trusted-lesson capture, project-aware instruction dedupe, critic escalation, coding-loop convergence steering, a five-state delivery guard, and inverted-index memory retrieval. Tuned for local 27B models like Qwen3.8-27B and compatible with local Flash/API models.",
+  "description": "Model-agnostic DSH host plugin for continual self-improvement: per-use self-check, trusted-lesson capture, project-aware instruction dedupe, critic escalation, coding-loop convergence steering, a five-state delivery guard, and inverted-index memory retrieval. Works with any model DSH can run; defaults tuned for local 27B/Flash and API models.",
   "author": "pk14742952-AD <192967623+pk14742952-AD@users.noreply.github.com>",
   "repository": {
     "type": "git",

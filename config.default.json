@@ -48,9 +48,7 @@
   "convergence": {
     "enabled": true,
     "repeatThreshold": 3,
-    "models": [
-      "*27b*"
-    ]
+    "models": []
   },
   "guard": {
     "enabled": true,

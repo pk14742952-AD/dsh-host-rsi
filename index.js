@@ -123,7 +123,9 @@ const Config = {
     convergence: {
       enabled: true, // ported from dsh-bonsai-fast / pi-extension-convergence
       repeatThreshold: 3,
-      models: ['*27b*'], // unset = all models (legacy); explicit [] = all models
+      // Empty list = every model DSH runs (local 27B, Flash, API). Set e.g. ['*27b*']
+      // only when a user wants to restrict convergence steering to specific models.
+      models: [],
     },
     guard: {
       enabled: true, // L3 delivery guard from D:\ninfer 04/05 防治文档
@@ -966,7 +968,7 @@ export function apply(ctx, config = {}) {
 
   // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
   ensureSelfCheck({});
-  // (1b) Model-gated completion policy for coding-loop convergence (default *27b*).
+  // (1b) Completion policy for coding-loop convergence (all models by default).
   registerConvergencePolicy();
 
   // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
@@ -1004,7 +1006,8 @@ export function apply(ctx, config = {}) {
 
   // (4) Coding-loop convergence (ported from dsh-bonsai-fast / pi-extension-convergence):
   //     detect repeated passing checks and steer the model to converge instead of
-  //     over-verifying; reset on any edit/write. Model-gated (default *27b*).
+  //     over-verifying; reset on any edit/write. All models by default; users can
+  //     restrict with `convergence.models`.
   if (cfg.convergence.enabled !== false && ctx?.on) {
     try {
       ctx.on('tools/pre-execute', (exec, next) => {

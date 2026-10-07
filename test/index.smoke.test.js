@@ -466,7 +466,7 @@ test('session/event user/message with data.content records instruction', async (
   cleanup();
 });
 
-test('convergence hooks steer 27b shells after repeated passing checks and reset on edit', async () => {
+test('convergence hooks steer shells after repeated passing checks and reset on edit', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-cvg-'));
   const ctx = {
     events: {},
@@ -509,8 +509,45 @@ test('convergence hooks steer 27b shells after repeated passing checks and reset
   cleanup();
 });
 
-test('convergence is model-gated: non-27b shells are never steered', async () => {
+test('convergence gating: an explicit *27b* list excludes non-27b models', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-cvg-gate-'));
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      ctx.events[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register() {
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+    convergence: { models: ['*27b*'] },
+  });
+
+  const agent = { session: { requestContext: () => ({ model: 'deepseek-v4.1-flash' }) } };
+  const exec = { agent, name: 'pwsh', arguments: { command: 'npm test' } };
+  const result = { isError: false, content: [{ type: 'text', text: '1 passed' }] };
+  const next = async () => ({ additionalContexts: [] });
+  let out;
+  for (let i = 0; i < 6; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
+  assert.ok(!out?.additionalContexts?.length, 'non-matching models must never receive a convergence steer');
+
+  cleanup();
+});
+
+test('convergence defaults apply to every model, including Flash/API shells', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-cvg-all-'));
   const ctx = {
     events: {},
     on(name, cb) {
@@ -539,8 +576,8 @@ test('convergence is model-gated: non-27b shells are never steered', async () =>
   const result = { isError: false, content: [{ type: 'text', text: '1 passed' }] };
   const next = async () => ({ additionalContexts: [] });
   let out;
-  for (let i = 0; i < 6; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
-  assert.ok(!out?.additionalContexts?.length, 'non-matching models must never receive a convergence steer');
+  for (let i = 0; i < 3; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
+  assert.equal(out?.additionalContexts?.[0]?.content?.[0]?.text, SOFT_STEER, 'default config must steer non-27b models too');
 
   cleanup();
 });

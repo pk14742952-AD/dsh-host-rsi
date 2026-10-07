@@ -65,7 +65,8 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 - **编码循环收敛**：移植自 `dsh-bonsai-fast` / `pi-extension-convergence`。当同一轮通过检查
   （`pytest` / `npm test` / build / API）连续重复，或已有多类检查全部通过时，插件通过
   `tools/post-execute` 注入强/软收敛提示，避免「测试通过后继续反复验证」；任何 `edit` / `write`
-  会重置计数。默认只对名称含 `27b` 的本地模型生效（`convergence.models: ["*27b*"]`）。
+  会重置计数。默认对所有 DSH 可运行的模型生效；如需只收敛 27B，把 `convergence.models`
+  设为 `["*27b*"]` 即可。
 - **L3 交付护栏**：参考 `D:\ninfer` 04/05 防治方案，在宿主侧识别五态失败：
   `EMPTY`（空交付/正文过短）、`TRUNCATED`（代码块或 SVG 未闭合、finish_reason=length）、
   `FIXED_POINT`（与上一轮逐字相同）、`SAME_PLAN`（只重复计划）、`SHELL_LOOP`（只调工具无正文）。
@@ -182,7 +183,7 @@ npm test             # 纯逻辑 + 数据层套件（node --test test/*.test.js�
   `selfCheck=false` 时不再注入强制 `[VERIFY: ...]` 尾行，适合结构化输出 / schema 约束场景；
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`；
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`；
-- `convergence.{enabled,repeatThreshold,models}`：重复通过阈值与生效模型，models 省略=全部模型，默认 `["*27b*"]`；
+- `convergence.{enabled,repeatThreshold,models}`：重复通过阈值与生效模型，默认 `[]`=全部模型，可设 `["*27b*"]` 等白名单；
 - `guard.{enabled,maxRetries,maxPerSession,thresholdEmpty,thresholdFile,sameToolStreak,fileTurnRe,tasksRe,recordTrajectory}`：交付护栏阈值与重试预算；
 - `embeddings`（预留，默认 null；规模大了可换成嵌入近邻）。
 

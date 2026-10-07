@@ -92,8 +92,8 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 - **Coding-loop convergence** (ported from `dsh-bonsai-fast` / `pi-extension-convergence`): when
   the same passing check (`pytest` / `npm test` / build / API) repeats, or several check families
   have all passed, the plugin injects a strong/soft steer via `tools/post-execute` so the agent
-  stops over-verifying; any `edit` / `write` resets the counter. Model-gated by default to names
-  containing `27b` (`convergence.models: ["*27b*"]`).
+  stops over-verifying; any `edit` / `write` resets the counter. Enabled for every model DSH
+  runs by default; set `convergence.models: ["*27b*"]` if you only want 27B models steered.
 - **L3 delivery guard** (from the `D:\ninfer` 04/05 prevention scheme): host-side detection of
   `EMPTY` / `TRUNCATED` / `FIXED_POINT` / `SAME_PLAN` / `SHELL_LOOP`. On a failure state it
   schedules one `agent.followup` round asking for a complete, closed deliverable; capped at
@@ -213,8 +213,8 @@ See `config.default.json`:
   `selfCheck: false` skips the mandated `[VERIFY: ...]` trailer, for schema-constrained / structured-output callers;
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`;
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
-- `convergence.{enabled,repeatThreshold,models}`: repeated-pass threshold and target models; omit
-  `models` for all models, default `["*27b*"]`;
+- `convergence.{enabled,repeatThreshold,models}`: repeated-pass threshold and target models;
+  default `[]` = all models, or use a whitelist such as `["*27b*"]`;
 - `guard.{enabled,maxRetries,maxPerSession,thresholdEmpty,thresholdFile,sameToolStreak,fileTurnRe,tasksRe,recordTrajectory}`:
   delivery-guard thresholds and retry budget;
 - `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).

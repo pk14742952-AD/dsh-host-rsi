@@ -11,5 +11,5 @@
         inject: { topK: 3, tokenBudget: 1000, candCap: 40, enabled: true, oncePerTask: false, selfCheck: true, maxInjectsPerTask: 2, reinjectOn: [tool-failure, repeated-failure], compactTopK: 1, compactTokenBudget: 300 }
         capture: { enabled: true, maxPerSession: 10, minChars: 300, dedupeThreshold: 0.8 }
         escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 }
-        convergence: { enabled: true, repeatThreshold: 3, models: ["*27b*"] }
+        convergence: { enabled: true, repeatThreshold: 3, models: [] }
         guard: { enabled: true, maxRetries: 2, maxPerSession: 4, thresholdEmpty: 400, thresholdFile: 2000, sameToolStreak: 3, fileTurnRe: 'file|write|create|generate|implement|fix|script|\.(?:js|ts|py|json|md|yml|yaml)|文件|创建|编写|生成|修复|脚本', tasksRe: 'write|create|fix|implement|optimize|design|analyze|generate|refactor|debug|test|build|migrate|check|translate|convert|编写|写|创建|修复|实现|优化|设计|分析|生成|重构|调试|测试|构建|迁移|检查|翻译|转换', recordTrajectory: true }
