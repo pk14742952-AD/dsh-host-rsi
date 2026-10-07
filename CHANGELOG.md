@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-07
+
+### Changed
+
+- README (zh/en) now opens with a "problem it solves" note: the plugin targets local LLM
+  death loops / getting stuck / 雷霆大思考 (repeatedly re-verifying a passing check, empty
+  delivery, plan-only replies, pure tool loops, truncated output) with the coding-loop
+  convergence steerer and the five-state delivery guard.
+
 ## [0.2.0] - 2026-10-07
 
 ### Added

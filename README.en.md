@@ -11,6 +11,13 @@ Each run starts with a counter-reasoning self-check: the model interrogates its 
 **Trusted lessons are saved and injected into the next run.** If the cheap method does not resolve the issue,
 deeper critic rounds **automatically escalate**. No task-specific scorer is required for the general pattern.
 
+> **Problem it solves**: local LLMs (especially 27B models such as Qwen3.8-27B) can get stuck in
+> death loops during long tasks — re-running an already-passing test/build/API check, empty delivery,
+> plan-only replies with no progress, pure tool loops without a final answer, or truncated output.
+> This plugin ships a **coding-loop convergence steerer** and a **five-state delivery guard** that
+> inject a convergence hint or schedule an immediate, complete, closed deliverable when one of those
+> states is detected.
+
 Repository: <https://github.com/pk14742952-AD/dsh-host-rsi>
 
 > **Plugin summary**: a DSH memory / self-evolution plugin. It gathers
