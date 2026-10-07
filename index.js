@@ -432,9 +432,14 @@ export function apply(ctx, config = {}) {
         s.pendingReinject = false;
         s.reinjectQuery = '';
         runtime.taskChanges += 1;
-        const opts = cfg.inject.oncePerTask
-          ? cfg.inject
-          : { ...cfg.inject, topK: cfg.inject.topK, tokenBudget: cfg.inject.tokenBudget };
+        const opts = {
+          ...cfg.inject,
+          topK: cfg.inject.topK,
+          tokenBudget: cfg.inject.tokenBudget,
+          // Scoping hint: lets the store/retrieve surface standing rules for THIS project
+          // even when the task wording shares no vocabulary with them.
+          project: eventProject(event, task),
+        };
         if (pushInjection(s, event, task, opts)) {
           s.lastTaskInjectCount += 1;
           runtime.injects += 1;
@@ -454,6 +459,7 @@ export function apply(ctx, config = {}) {
             ...cfg.inject,
             topK: cfg.inject.compactTopK ?? 1,
             tokenBudget: cfg.inject.compactTokenBudget ?? 300,
+            project: eventProject(event, query),
           };
           if (pushInjection(s, event, query, opts)) {
             s.lastTaskInjectCount += 1;
@@ -483,7 +489,13 @@ export function apply(ctx, config = {}) {
       s.pendingReinject = false;
       s.reinjectQuery = '';
       runtime.taskChanges += 1;
-      if (pushInjection(s, event, content, cfg.inject)) {
+      // The project key must be derived HERE as well. This is the path that fires for a user
+      // message — and for a subagent's prompt — so passing bare `cfg.inject` meant
+      // store.search() saw project === null, project-scoped standing rules were never
+      // candidates, and memory injection silently never happened (runtime.injects stayed 0)
+      // even though capture had tagged the lesson with the right project.
+      const opts = { ...cfg.inject, project: eventProject(event, content) };
+      if (pushInjection(s, event, content, opts)) {
         s.lastTaskInjectCount += 1;
         runtime.injects += 1;
         runtime.lastInject = content;
