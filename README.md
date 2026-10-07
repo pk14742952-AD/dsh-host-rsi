@@ -60,6 +60,19 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 - **最大兼容性**：纯逻辑层零宿主依赖（可 `npm test`）；宿主侧每个 DSH 调用都带 `?.` 防御 +
   try/catch，形状错了就空操作，绝不向宿主抛错。
 
+## 收敛 + 交付护栏（v0.2.0）
+
+- **编码循环收敛**：移植自 `dsh-bonsai-fast` / `pi-extension-convergence`。当同一轮通过检查
+  （`pytest` / `npm test` / build / API）连续重复，或已有多类检查全部通过时，插件通过
+  `tools/post-execute` 注入强/软收敛提示，避免「测试通过后继续反复验证」；任何 `edit` / `write`
+  会重置计数。默认只对名称含 `27b` 的本地模型生效（`convergence.models: ["*27b*"]`）。
+- **L3 交付护栏**：参考 `D:\ninfer` 04/05 防治方案，在宿主侧识别五态失败：
+  `EMPTY`（空交付/正文过短）、`TRUNCATED`（代码块或 SVG 未闭合、finish_reason=length）、
+  `FIXED_POINT`（与上一轮逐字相同）、`SAME_PLAN`（只重复计划）、`SHELL_LOOP`（只调工具无正文）。
+  命中失败态会自动 `agent.followup` 一轮「立即输出完整闭合交付物」；每轮最多 `maxRetries` 次、
+  每会话最多 `maxPerSession` 次，耗尽后写入隔离轨迹供查看。工具实际写文件后只给短结论的回合
+  不会被误判（长度门槛只对未跑工具的内联交付生效）。
+
 ## 进化机制（可靠性加权信号阶梯）
 
 ```
@@ -90,7 +103,9 @@ dsh-host-rsi/            # 插件包（代码）
   icon.svg               # 设置页图标
   lib/                   # 纯逻辑（可单测，零宿主依赖）
     capture.js           # 把一轮编排为"已分类教训 + 轨迹"
+    convergence.js       # 编码循环收敛（移植自 dsh-bonsai-fast / pi-extension-convergence）
     dashboard.js         # dashboardHtml + /rsi/* webserver handler + 本机 dashboard server
+    guard.js             # L3 交付护栏（EMPTY/TRUNCATED/FIXED_POINT/SAME_PLAN/SHELL_LOOP 五态）
     interrogate.js       # 自检指令、[VERIFY] 标签解析、批评 prompt、自一致
     policy.js            # 触发 + 升级 + 预算门控 + 来源/系统内容过滤
     retrieve.js          # 相关度排序 + token 预算
@@ -167,6 +182,8 @@ npm test             # 纯逻辑 + 数据层套件（node --test test/*.test.js�
   `selfCheck=false` 时不再注入强制 `[VERIFY: ...]` 尾行，适合结构化输出 / schema 约束场景；
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`；
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`；
+- `convergence.{enabled,repeatThreshold,models}`：重复通过阈值与生效模型，models 省略=全部模型，默认 `["*27b*"]`；
+- `guard.{enabled,maxRetries,maxPerSession,thresholdEmpty,thresholdFile,sameToolStreak,fileTurnRe,tasksRe,recordTrajectory}`：交付护栏阈值与重试预算；
 - `embeddings`（预留，默认 null；规模大了可换成嵌入近邻）。
 
 默认值对本地模型偏保守。

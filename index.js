@@ -21,6 +21,8 @@ import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
 import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction, isDurableUserInstruction, isSystemLikeText, projectFromText } from './lib/policy.js';
+import { STRONG_STEER, SOFT_STEER, POLICY_TEXT, commandOf, createState, isModelActive, isShellTool, isSourceEdit, normalizeModels, observeShell, resetState, resultText } from './lib/convergence.js';
+import { classifyLoop, guardCorrectionPrompt, isFileTurn } from './lib/guard.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -118,6 +120,22 @@ const Config = {
     importRecent: { enabled: true, limit: 30, sessions: 10 },
     escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
     dashboard: { enabled: true, host: '127.0.0.1', port: 0, recent: 15, webserver: true },
+    convergence: {
+      enabled: true, // ported from dsh-bonsai-fast / pi-extension-convergence
+      repeatThreshold: 3,
+      models: ['*27b*'], // unset = all models (legacy); explicit [] = all models
+    },
+    guard: {
+      enabled: true, // L3 delivery guard from D:\ninfer 04/05 防治文档
+      maxRetries: 2,
+      maxPerSession: 4,
+      thresholdEmpty: 400,
+      thresholdFile: 2000,
+      sameToolStreak: 3,
+      fileTurnRe: 'file|write|create|generate|implement|fix|script|\.(?:js|ts|py|json|md|yml|yaml)|文件|创建|编写|生成|修复|脚本',
+      tasksRe: 'write|create|fix|implement|optimize|design|analyze|generate|refactor|debug|test|build|migrate|check|translate|convert|编写|写|创建|修复|实现|优化|设计|分析|生成|重构|调试|测试|构建|迁移|检查|翻译|转换',
+      recordTrajectory: true,
+    },
   },
 };
 
@@ -133,6 +151,12 @@ function normalize(config = {}) {
     importRecent: merge(d.importRecent, config.importRecent),
     escalate: merge(d.escalate, config.escalate),
     dashboard: merge(d.dashboard, config.dashboard),
+    convergence: {
+      ...d.convergence,
+      ...(config.convergence || {}),
+      models: config.convergence?.models === undefined ? d.convergence.models : normalizeModels(config.convergence.models),
+    },
+    guard: merge(d.guard, config.guard),
   };
 }
 
@@ -197,6 +221,18 @@ function systemPromptService(ctx) {
     /* fall through to safe property read */
   }
   return safeGet(ctx, 'systemPrompt');
+}
+function agentModelOf(agent) {
+  if (!agent || typeof agent !== 'object') return undefined;
+  const session = safeGet(agent, 'session');
+  if (session && typeof session.requestContext === 'function') {
+    try {
+      return session.requestContext()?.model;
+    } catch {
+      /* fall through to static model fields */
+    }
+  }
+  return safeGet(agent, 'model') ?? safeGet(agent, 'session', 'model');
 }
 function eventProject(event, fallbackText = '') {
   const direct =
@@ -280,6 +316,8 @@ export function apply(ctx, config = {}) {
     taskChanges: 0,
     skippedCapture: 0,
     blockedNoise: 0,
+    convergence: { steers: 0, strong: 0, soft: 0 },
+    guard: { fired: 0, retries: 0, rescued: 0, undelivered: 0 },
     lastEvent: null,
     lastEventAt: null,
     lastCapture: null,
@@ -369,6 +407,9 @@ export function apply(ctx, config = {}) {
         pendingReinject: false,
         reinjectQuery: '',
         injectDispose: null,
+        guardRetries: 0,
+        guardAwaiting: null,
+        prevAnswer: '',
       });
     }
     return sessions.get(key);
@@ -417,6 +458,111 @@ export function apply(ctx, config = {}) {
     return undefined;
   };
   const hasFollowup = !!(safeGet(ctx, 'agent', 'followup') ?? safeGet(ctx, 'followup'));
+
+  // Convergence state is per-agent: the same agent carries the pass/fingerprint history
+  // across tool steps until an edit/write resets it (same model as dsh-bonsai-fast).
+  const convergenceStates = new WeakMap();
+  const convergenceStateOf = (agent) => {
+    let st = convergenceStates.get(agent);
+    if (!st) {
+      st = createState();
+      convergenceStates.set(agent, st);
+    }
+    return st;
+  };
+  const convergenceActiveFor = (agent) => {
+    if (cfg.convergence.enabled === false) return false;
+    return isModelActive(agentModelOf(agent), cfg.convergence.models);
+  };
+  let convergencePolicyDispose = null;
+  function registerConvergencePolicy() {
+    if (cfg.convergence.enabled === false) return;
+    const sp = systemPromptService(ctx);
+    if (!sp?.section) return;
+    try {
+      if (typeof convergencePolicyDispose === 'function') convergencePolicyDispose();
+      const d = sp.section({
+        name: 'rsi-convergence-policy',
+        order: 350,
+        text: (assembleCtx) => (convergenceActiveFor(assembleCtx?.scope ?? assembleCtx?.agent) ? POLICY_TEXT : ''),
+      });
+      if (typeof d === 'function') convergencePolicyDispose = d;
+    } catch { /* host may not support dynamic sections -> no-op */ }
+  }
+
+  // L3 delivery guard: before capture, decide whether the turn actually delivered a
+  // usable answer. On a failure state the plugin asks the model to immediately re-output
+  // a complete, closed deliverable instead of recording a broken lesson. Retry budget is
+  // per turn (maxRetries) and per session (maxPerSession); after exhaustion the rejected
+  // turn is logged as a quarantined trajectory so the user still sees what happened.
+  function guardEligible(task, tools) {
+    if (tools.length > 0) return true; // tool loops always worth watching
+    const re = cfg.guard?.tasksRe;
+    if (!re) return true;
+    try {
+      return new RegExp(re, 'i').test(String(task || ''));
+    } catch {
+      return false;
+    }
+  }
+  function runGuard(s, event, task, answer, tools) {
+    const g = cfg.guard || {};
+    if (g.enabled === false) return false;
+    if (!guardEligible(task, tools)) return false;
+    const verdict = classifyLoop({
+      answerText: answer,
+      prevAnswerText: s.prevAnswer || '',
+      toolCalls: tools.map((t) => t?.name).filter(Boolean),
+      ranTools: tools.length > 0,
+      finishReason: safeGet(event, 'finishReason') ?? safeGet(event, 'stopReason') ?? safeGet(event, 'data', 'finishReason') ?? '',
+      fileTurn: isFileTurn(task, g.fileTurnRe),
+      thresholdEmpty: g.thresholdEmpty,
+      thresholdFile: g.thresholdFile,
+      sameToolStreak: g.sameToolStreak,
+    });
+    if (verdict.state === 'OK') {
+      if (s.guardAwaiting) {
+        s.guardAwaiting = null;
+        runtime.guard.rescued += 1;
+        runtime.lastReason = 'guard-rescued';
+      }
+      return false;
+    }
+    runtime.guard.fired += 1;
+    const maxPerSession = g.maxPerSession ?? 4;
+    const maxRetries = g.maxRetries ?? 2;
+    const attempt = s.guardAwaiting?.attempts || 0;
+    const canRetry = hasFollowup && s.guardRetries < maxPerSession && attempt < maxRetries;
+    if (canRetry) {
+      s.guardAwaiting = { state: verdict.state, attempts: attempt + 1 };
+      s.guardRetries += 1;
+      runtime.guard.retries += 1;
+      runtime.lastReason = `guard:${verdict.state}`;
+      followup(guardCorrectionPrompt(task, verdict.state, answer));
+      return true;
+    }
+    runtime.guard.undelivered += 1;
+    s.guardAwaiting = null;
+    runtime.lastReason = `guard-unresolved:${verdict.state}`;
+    if (g.recordTrajectory !== false) {
+      try {
+        store.addTrajectory({
+          id: event?.id ? `guard-${event.id}` : undefined,
+          ts: Date.now(),
+          task,
+          answer,
+          state: verdict.state,
+          reason: verdict.reason,
+          domain: 'guard',
+          layer: 'Q',
+          trusted: false,
+          sourceKind: 'guard',
+          summary: `delivery guard unresolved (${verdict.state}): ${verdict.reason}`,
+        });
+      } catch { /* trajectory write is best-effort */ }
+    }
+    return true;
+  }
 
   // Shared lifecycle helpers. These are API-shape agnostic: they read whatever field
   // DSH exposes (task / input.text / messages / content / assistantText), dedupe by
@@ -631,6 +777,12 @@ export function apply(ctx, config = {}) {
       const tools = toolResults(event);
       runtime.turnsSeen += 1;
 
+      const guardRejected = runGuard(s, event, task, answer, tools);
+      s.prevAnswer = answer;
+      if (guardRejected) {
+        return; // rejected turn is corrected before it becomes a lesson
+      }
+
       if (task && task === s.lastTask) {
         const sig = outcomeSignal({ taskText: task, answerText: answer, toolResults: tools });
         if (sig.hadFailure) {
@@ -814,6 +966,8 @@ export function apply(ctx, config = {}) {
 
   // (1) Always-on self-check instruction (cheap; the model does the counter-reason inline).
   ensureSelfCheck({});
+  // (1b) Model-gated completion policy for coding-loop convergence (default *27b*).
+  registerConvergencePolicy();
 
   // (2) Gated inject on pre-step. Default behavior is balanced: full injection on task
   //     change, then only small re-injections when the same task fails and reinjectOn
@@ -846,6 +1000,43 @@ export function apply(ctx, config = {}) {
         ctx.on(name, (event) => handleMessage(event, name));
       } catch { /* host may not expose this event -> no-op */ }
     }
+  }
+
+  // (4) Coding-loop convergence (ported from dsh-bonsai-fast / pi-extension-convergence):
+  //     detect repeated passing checks and steer the model to converge instead of
+  //     over-verifying; reset on any edit/write. Model-gated (default *27b*).
+  if (cfg.convergence.enabled !== false && ctx?.on) {
+    try {
+      ctx.on('tools/pre-execute', (exec, next) => {
+        try {
+          if (exec?.agent && isSourceEdit(exec.name) && convergenceActiveFor(exec.agent)) resetState(convergenceStateOf(exec.agent));
+        } catch { /* never block the tool waterfall */ }
+        return next?.();
+      });
+    } catch { /* host may not expose this event -> no-op */ }
+    try {
+      ctx.on('tools/post-execute', async (exec, result, next) => {
+        let steer = null;
+        try {
+          if (exec?.agent && isShellTool(exec.name) && result?.isError !== true && convergenceActiveFor(exec.agent)) {
+            steer = observeShell(convergenceStateOf(exec.agent), commandOf(exec.arguments), resultText(result), cfg.convergence.repeatThreshold);
+          }
+        } catch { /* never block the tool waterfall */ }
+        const downstream = await next?.();
+        if (!steer) return downstream;
+        runtime.convergence.steers += 1;
+        if (steer === STRONG_STEER) runtime.convergence.strong += 1;
+        else if (steer === SOFT_STEER) runtime.convergence.soft += 1;
+        const context = {
+          content: [{ type: 'text', text: steer }],
+          source: { kind: 'dsh-host-rsi', form: 'notice', summary: 'convergence' },
+        };
+        return {
+          ...downstream,
+          additionalContexts: [context, ...(downstream?.additionalContexts ?? [])],
+        };
+      });
+    } catch { /* host may not expose this event -> no-op */ }
   }
 
   // (5) Optional forced deep-verify tool (user requests it explicitly).
@@ -950,6 +1141,8 @@ export function apply(ctx, config = {}) {
     lastAssistantBySession.clear();
     try { selfCheckDispose?.(); } catch { /* ignore */ }
     selfCheckDispose = null;
+    try { convergencePolicyDispose?.(); } catch { /* ignore */ }
+    convergencePolicyDispose = null;
     try { dashClose?.(); } catch { /* ignore */ }
     webRouteStore = null;
     webRouteCfg = null;

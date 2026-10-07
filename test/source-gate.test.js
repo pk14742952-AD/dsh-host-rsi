@@ -135,7 +135,11 @@ test('selfCheck=false removes the [VERIFY] trailer; the default keeps injecting 
     inject: { enabled: true, selfCheck: false },
   });
   offCtx.eventHandlers['agent/pre-step']({ task: 'write a parser' });
-  assert.equal(offSections.length, 0, 'selfCheck=false must not inject the VERIFY trailer');
+  assert.equal(
+    offSections.some((s) => s.name === 'rsi-selfcheck' && /\[VERIFY:/.test(s.text)),
+    false,
+    'selfCheck=false must not inject the VERIFY trailer (the convergence policy section may still be present)'
+  );
   closeOff();
 
   const onSections = [];

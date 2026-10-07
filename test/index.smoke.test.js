@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { apply } from '../index.js';
 import { openStore } from '../lib/store.js';
+import { SOFT_STEER } from '../lib/convergence.js';
 
 test('Config is not exported - cordis resolveConfig would crash on a plain object', async () => {
   const mod = await import('../index.js');
@@ -461,6 +462,139 @@ test('session/event user/message with data.content records instruction', async (
   assert.ok(task, 'session/event data.content user message should be recorded');
   assert.equal(task.layer, 'Q');
   assert.equal(task.trusted, false);
+
+  cleanup();
+});
+
+test('convergence hooks steer 27b shells after repeated passing checks and reset on edit', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-cvg-'));
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      ctx.events[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register() {
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  assert.equal(typeof ctx.events['tools/pre-execute'], 'function');
+  assert.equal(typeof ctx.events['tools/post-execute'], 'function');
+
+  const agent = { session: { requestContext: () => ({ model: 'qwen3-27b' }) } };
+  const exec = { agent, name: 'pwsh', arguments: { command: 'npm test' } };
+  const result = { isError: false, content: [{ type: 'text', text: '1 passed' }] };
+  const next = async () => ({ additionalContexts: [] });
+  let out;
+  for (let i = 0; i < 3; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
+  assert.equal(out?.additionalContexts?.[0]?.content?.[0]?.text, SOFT_STEER, 'third repeated pass should soft-steer');
+
+  ctx.events['tools/pre-execute']({ agent, name: 'edit' }, () => {});
+  out = await ctx.events['tools/post-execute'](exec, result, next);
+  assert.ok(!out?.additionalContexts?.length, 'after a source edit the pass counter restarts');
+
+  cleanup();
+});
+
+test('convergence is model-gated: non-27b shells are never steered', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-cvg-gate-'));
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      ctx.events[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    tools: {
+      register() {
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  const agent = { session: { requestContext: () => ({ model: 'deepseek-v4.1-flash' }) } };
+  const exec = { agent, name: 'pwsh', arguments: { command: 'npm test' } };
+  const result = { isError: false, content: [{ type: 'text', text: '1 passed' }] };
+  const next = async () => ({ additionalContexts: [] });
+  let out;
+  for (let i = 0; i < 6; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
+  assert.ok(!out?.additionalContexts?.length, 'non-matching models must never receive a convergence steer');
+
+  cleanup();
+});
+
+test('delivery guard schedules one correction round and marks rescue when fixed', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-guard-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const followups = [];
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    agent: {
+      followup(p) {
+        followups.push(p);
+      },
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  eventHandlers['turn/end']({ task: 'write a script', assistantText: '', finishReason: 'length', sessionId: 'g1' });
+  assert.equal(followups.length, 1, 'a truncated empty turn should schedule exactly one correction round');
+  let diag = await toolRuns.rsi_events({});
+  assert.equal(diag.guard.fired, 1);
+  assert.equal(diag.guard.retries, 1);
+  assert.equal(diag.guard.undelivered, 0);
+
+  eventHandlers['turn/end']({
+    task: 'write a script',
+    assistantText: 'done, script written to tests/out.js',
+    toolResults: [{ name: 'pwsh', ok: true }],
+    sessionId: 'g1',
+  });
+  diag = await toolRuns.rsi_events({});
+  assert.equal(diag.guard.rescued, 1, 'a complete tool-backed turn rescues the awaited correction');
+  assert.equal(diag.guard.fired, 1);
 
   cleanup();
 });

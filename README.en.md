@@ -87,6 +87,20 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 
 ## Evolution Mechanism (Reliability-Weighted Signal Ladder)
 
+## Convergence + Delivery Guard (v0.2.0)
+
+- **Coding-loop convergence** (ported from `dsh-bonsai-fast` / `pi-extension-convergence`): when
+  the same passing check (`pytest` / `npm test` / build / API) repeats, or several check families
+  have all passed, the plugin injects a strong/soft steer via `tools/post-execute` so the agent
+  stops over-verifying; any `edit` / `write` resets the counter. Model-gated by default to names
+  containing `27b` (`convergence.models: ["*27b*"]`).
+- **L3 delivery guard** (from the `D:\ninfer` 04/05 prevention scheme): host-side detection of
+  `EMPTY` / `TRUNCATED` / `FIXED_POINT` / `SAME_PLAN` / `SHELL_LOOP`. On a failure state it
+  schedules one `agent.followup` round asking for a complete, closed deliverable; capped at
+  `maxRetries` per turn and `maxPerSession` per session, then archived as a quarantined
+  trajectory. Tool-backed short summaries are not length-flagged (length gates only apply to
+  inline delivery with no tool runs).
+
 ```text
 task + answer
   |-- L1  verifiable check available? (code test / math == / SQL match / schema valid)
@@ -116,7 +130,9 @@ dsh-host-rsi/          # plugin package (code)
   icon.svg             # settings icon
   lib/                 # pure logic (unit-testable, no host dependency)
     capture.js         # composes a turn into classified lesson + trajectory
+    convergence.js     # coding-loop convergence (ported from dsh-bonsai-fast / pi-extension-convergence)
     dashboard.js       # dashboardHtml + /rsi/* webserver handler + standalone dashboard server
+    guard.js           # L3 delivery guard (EMPTY/TRUNCATED/FIXED_POINT/SAME_PLAN/SHELL_LOOP)
     interrogate.js     # self-check instruction, [VERIFY] tag parsing, critic prompt, self-consistency
     policy.js          # trigger + escalation + budget gating + source/system-content filtering
     retrieve.js        # relevance ranking + token budget
@@ -197,6 +213,10 @@ See `config.default.json`:
   `selfCheck: false` skips the mandated `[VERIFY: ...]` trailer, for schema-constrained / structured-output callers;
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`;
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
+- `convergence.{enabled,repeatThreshold,models}`: repeated-pass threshold and target models; omit
+  `models` for all models, default `["*27b*"]`;
+- `guard.{enabled,maxRetries,maxPerSession,thresholdEmpty,thresholdFile,sameToolStreak,fileTurnRe,tasksRe,recordTrajectory}`:
+  delivery-guard thresholds and retry budget;
 - `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).
 
 Defaults are conservative for local models.

@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-07
+
+### Added
+
+- Coding-loop convergence (ported from `dsh-bonsai-fast` / `pi-extension-convergence`): repeated
+  passing tests / build / API checks no longer get re-run endlessly. The plugin watches
+  `tools/post-execute`, resets the counter on any `edit` / `write`, and steers the model to
+  converge: a soft steer after the same check repeats, a strong steer as soon as multiple check
+  families have all passed. Model-gated by default (`*27b*`, covering Qwen3.8-27B variants), and
+  the completion policy section is injected only for matching models.
+- L3 delivery guard (from the `D:\ninfer` 04/05 卡死与循环防治方案): host-side five-state
+  detection of `EMPTY` / `TRUNCATED` / `FIXED_POINT` / `SAME_PLAN` / `SHELL_LOOP` after an
+  assistant turn. A rejected turn schedules a correction round via `agent.followup` instead of
+  being recorded as a lesson; after `maxRetries` per turn / `maxPerSession` per session it is
+  archived as a quarantined trajectory. Tool-backed short summaries are not length-flagged, so
+  normal "write files then summarize" turns are not disturbed.
+- Live diagnostics for both features: dashboard cards and `rsi_status` / `rsi_events` now show
+  convergence steers (strong/soft) and guard fired / retries / rescued / undelivered counters.
+- New config: `convergence.{enabled,repeatThreshold,models}` and
+  `guard.{enabled,maxRetries,maxPerSession,thresholdEmpty,thresholdFile,sameToolStreak,fileTurnRe,tasksRe,recordTrajectory}`.
+
+### Changed
+
+- `rsi-guard` follow-up prompts are treated as system content (never captured as user lessons).
+
 ## [0.1.14] - 2026-10-07
 
 ### Fixed
