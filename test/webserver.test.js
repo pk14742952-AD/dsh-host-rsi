@@ -114,3 +114,33 @@ test('apply() 在无 webServer 服务且 index-inject 不触发时仍完成、�
   assert.ok(toolCalls >= 1, `核心工具（rsi_verify/rsi_status/rsi_records）在 webserver 缺失时仍被注册（got ${toolCalls}）`);
   dispose?.();
 });
+
+test('re-applying the plugin swaps /rsi route state instead of serving a frozen snapshot', () => {
+  const dir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-route-1-'));
+  const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-route-2-'));
+  const registers = [];
+  const ctx = {
+    on: () => () => {},
+    inject(names, cb) {
+      if (Array.isArray(names) && names.includes('webServer')) {
+        cb({ webServer: { register(opts) { registers.push(opts); return () => {}; } } });
+      }
+      return () => {};
+    },
+    systemPrompt: undefined,
+    tools: undefined,
+    agent: undefined,
+  };
+  const common = { enabled: true, dashboard: { enabled: false, webserver: true }, flushMs: 100000 };
+  const dispose1 = apply(ctx, { ...common, dir: dir1 });
+  const dispose2 = apply(ctx, { ...common, dir: dir2 });
+
+  assert.equal(registers.length, 1, 'the /rsi route should be registered once per process');
+  const res = fakeRes();
+  registers[0].handler({ url: '/rsi/status.json' }, res);
+  const j = JSON.parse(res.body);
+  assert.equal(j.dir, dir2, 're-applied instance must serve the new store, not the first snapshot');
+
+  dispose1();
+  dispose2();
+});

@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-10-07
+
+### Fixed
+
+- User-instruction capture pollution (issue #1): messages whose DSH `source.kind` is not
+  `user`, plus host/system-injected boilerplate (runtime-context banners, other plugins'
+  injected instructions, the plugin's own self-check block), are now blocked at the source
+  gate instead of being recorded as user lessons. Blocked noise is counted and visible in
+  the dashboard / `rsi_status` / `rsi_events` diagnostics, and captured records now carry a
+  `sourceKind` field so users can verify where each lesson came from.
+- Durable-rule judgement was too loose: any instruction of 20+ characters was trusted as a
+  standing L3 rule even when it was just a long one-off task. It now requires explicit rule
+  phrasing (`永远/记得/必须/always/never/please use`...) or a rule noun.
+- `inject.selfCheck` config gate: when set to `false`, the mandatory `[VERIFY: ...]`
+  trailer is no longer injected, so schema-constrained/structured-output callers are not
+  forced into an unparseable trailing line. It defaults to `true` (previous behaviour).
+- The `/rsi/*` webserver route no longer keeps serving the first instance's frozen snapshot
+  after the plugin is re-applied in the same process: the route is registered once and its
+  live store/config/snapshot state is swapped on every apply.
+- Packaging/doc drift (issue #3): `test/**` is included in the published package, the
+  README verification command uses the scoped `node --test test/*.test.js` / `npm test`, the
+  directory layout no longer lists nonexistent `lib/inject.js` / `lib/spine.js`, and the
+  npm install instructions clearly state the package is not published yet (GitHub install
+  is the supported path; the hardcoded `--profile web` was removed).
+
+### Changed
+
+- Merged capture/retrieval hardening (PR #2): durable user instructions are stored in full
+  instead of being sliced to 160 chars, project paths written inside backticks/quotes
+  resolve to a `project:` tag, retrieval now filters stopwords and ranks by IDF, and
+  standing project rules are injected first by scope.
+- README (zh/en) now opens with a welcome note inviting Issues/PRs and a star.
+
 ## [0.1.13] - 2026-10-05
 
 ### Fixed

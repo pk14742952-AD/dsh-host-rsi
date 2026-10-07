@@ -10,6 +10,7 @@
     "enabled": true,
     "includeQuarantined": false,
     "oncePerTask": false,
+    "selfCheck": true,
     "maxInjectsPerTask": 2,
     "reinjectOn": [
       "tool-failure",

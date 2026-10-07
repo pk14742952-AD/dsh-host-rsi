@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -53,7 +53,8 @@
     "CHANGELOG.md",
     "LICENSE",
     "demo-serve.mjs",
-    "icon.svg"
+    "icon.svg",
+    "test/**"
   ],
   "dsh": {
     "bundle": {

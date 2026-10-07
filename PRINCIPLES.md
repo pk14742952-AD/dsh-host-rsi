@@ -47,7 +47,7 @@
      └─────────────────────┘
 ```
 
-**复刻铁律：纯逻辑层不得 import 任何 DSH 对象。** 这样它能在 `node --test` 里脱离宿主独立验证（对应 `test/*.test.js` 7 套）。宿主侧只有 `index.js`，且每个 DSH 调用都用 `?.` 防御（形状错了 no-op 不崩），首启再用 `cordis_inspect_query` 校准。
+**复刻铁律：纯逻辑层不得 import 任何 DSH 对象。** 这样它能在 `npm test` 里脱离宿主独立验证（对应 `test/*.test.js` 多套）。宿主侧只有 `index.js`，且每个 DSH 调用都用 `?.` 防御（形状错了 no-op 不崩），首启再用 `cordis_inspect_query` 校准。
 
 ---
 
@@ -230,7 +230,7 @@
 - `index.js`：`apply(ctx,config)` + `Config`（§5.4/§附 全部默认值；含 `enabled` 总开关 + `flushMs`）；注入"每轮一次"，清理时 `store.close()`。
 
 **必守约定：**
-1. 纯逻辑层零宿主依赖（可 `node --test`）。
+1. 纯逻辑层零宿主依赖（可 `npm test`）。
 2. `classifySignal` 判定顺序 = L1 → L3 → L2(REFUTED) → L2(CONFIRMED 分置信) → Q。
 3. `shouldEscalate` 顺序 = userForced → L1 已决 → 无标签 → 判定。
 4. 只注入 trusted；Q 走 `promote` 转正。

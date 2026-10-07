@@ -8,6 +8,6 @@
         # dir: "C:\\Users\\me\\.dsh\\rsi-memory"
         flushMs: 1000           # 后台写入防抖间隔（ms）
         dashboard: { enabled: true, host: "127.0.0.1", port: 0, recent: 15, webserver: true }   # 环回仪表板("打开仪表板"目标) + DSH 同源 /rsi 路由(设置页实时拉取)；port 0=随机，webserver=false 只留环回
-        inject: { topK: 3, tokenBudget: 1000, candCap: 40, enabled: true, oncePerTask: false, maxInjectsPerTask: 2, reinjectOn: [tool-failure, repeated-failure], compactTopK: 1, compactTokenBudget: 300 }
+        inject: { topK: 3, tokenBudget: 1000, candCap: 40, enabled: true, oncePerTask: false, selfCheck: true, maxInjectsPerTask: 2, reinjectOn: [tool-failure, repeated-failure], compactTopK: 1, compactTokenBudget: 300 }
         capture: { enabled: true, maxPerSession: 10, minChars: 300, dedupeThreshold: 0.8 }
         escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 }

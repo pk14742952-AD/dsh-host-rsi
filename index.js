@@ -20,7 +20,7 @@ import path from 'node:path';
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
-import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction, isDurableUserInstruction, projectFromText } from './lib/policy.js';
+import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction, isDurableUserInstruction, isSystemLikeText, projectFromText } from './lib/policy.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -29,6 +29,24 @@ try {
   pkgVersion = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version || pkgVersion;
 } catch {
   /* version display is best-effort */
+}
+
+// One /rsi route per process. DSH can re-apply a plugin without disposing the old
+// instance; re-registering then leaves the previous closure serving a frozen snapshot.
+// Keep a single delegating handler and swap the live store/config/snapshot on every apply.
+let webRoute = null; // { dispose }
+let webRouteStore = null;
+let webRouteCfg = null;
+let webRouteSnapshot = null;
+function rsiRouteHandler(req, res) {
+  if (!webRouteStore) {
+    try {
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('RSI route not ready');
+    } catch { /* ignore */ }
+    return;
+  }
+  rsiWebserverHandler(webRouteStore, webRouteCfg, webRouteSnapshot)(req, res);
 }
 
 // Config defaults; users override via the bundle row config (cordis.patch.yml).
@@ -90,6 +108,7 @@ const Config = {
       // Balanced default: first injection on task change, then only small re-injections
       // when the same task hits a real failure or repeats the same failure.
       oncePerTask: false,
+      selfCheck: true,
       maxInjectsPerTask: 2,
       reinjectOn: ['tool-failure', 'repeated-failure'],
       compactTopK: 1,
@@ -151,6 +170,18 @@ function eventRole(event) {
 
 function eventType(event) {
   return String(event?.type ?? event?.kind ?? event?.role ?? event?.message?.type ?? '').toLowerCase();
+}
+
+function eventSourceKind(event) {
+  const data = eventData(event);
+  const m = eventMessage(event);
+  const raw =
+    safeGet(m, 'source', 'kind') ??
+    safeGet(data, 'source', 'kind') ??
+    safeGet(event, 'source', 'kind') ??
+    safeGet(event, 'message', 'source', 'kind') ??
+    safeGet(data, 'message', 'source', 'kind');
+  return typeof raw === 'string' && raw.trim() ? raw.trim().toLowerCase() : null;
 }
 
 function sessionKey(event, ctx) {
@@ -248,6 +279,7 @@ export function apply(ctx, config = {}) {
     critics: 0,
     taskChanges: 0,
     skippedCapture: 0,
+    blockedNoise: 0,
     lastEvent: null,
     lastEventAt: null,
     lastCapture: null,
@@ -310,8 +342,16 @@ export function apply(ctx, config = {}) {
         const ws = sub?.webServer;
         if (!ws?.register) return; // service absent -> no-op
         try {
-          const dispose = ws.register({ kind: 'prefix', path: '/rsi', handler: rsiWebserverHandler(store, cfg, liveSnapshot) });
-          if (typeof dispose === 'function') disposers.push(dispose);
+          // Always refresh the shared route state so a re-applied instance stops serving
+          // the first instance's frozen snapshot; register only once per process.
+          webRouteStore = store;
+          webRouteCfg = cfg;
+          webRouteSnapshot = liveSnapshot;
+          if (!webRoute) {
+            const dispose = ws.register({ kind: 'prefix', path: '/rsi', handler: rsiRouteHandler });
+            webRoute = { dispose: typeof dispose === 'function' ? dispose : null };
+          }
+          if (webRoute.dispose) disposers.push(webRoute.dispose);
         } catch { /* /rsi already owned by another plugin -> keep the loopback dashboard */ }
       });
     } catch { /* ignore */ }
@@ -408,6 +448,13 @@ export function apply(ctx, config = {}) {
   }
 
   function ensureSelfCheck(event) {
+    if (cfg.inject.selfCheck === false) {
+      if (selfCheckDispose) {
+        try { selfCheckDispose(); } catch { /* ignore */ }
+        selfCheckDispose = null;
+      }
+      return;
+    }
     const sp = safeGet(event, 'systemPrompt') ?? systemPromptService(ctx);
     if (!sp?.section) return;
     try {
@@ -514,13 +561,23 @@ export function apply(ctx, config = {}) {
       const m = eventMessage(event);
       const content = contentText(m?.content) || String(event?.message?.content ?? event?.content ?? event?.text ?? event?.assistantText ?? event?.answer ?? '');
       if (role && role.includes('user')) {
+        const sourceKind = eventSourceKind(event);
+        // Source gate: only genuine user messages are memory signals. DSH system banners and
+        // co-installed plugins can emit user-role content, and that noise must never become a
+        // lesson (or drive task-change injection). Unknown source stays compatible with DSH
+        // releases that do not expose source.kind.
+        const genuineUser = !sourceKind || sourceKind === 'user';
+        if (!genuineUser || isSystemLikeText(content)) {
+          runtime.blockedNoise += 1;
+          return;
+        }
         const prev = lastAssistantBySession.get(key);
         const s = sess(key);
         const maxCap = cfg.capture.maxPerSession ?? 10;
         const canCapture = cfg.capture.enabled && s.captures < maxCap;
         const correctionWanted = canCapture && cfg.capture.captureUserCorrections !== false && prev && isUserCorrection({ correctionText: content });
         if (correctionWanted) {
-          const rec = captureUserCorrection({ taskText: prev.task || taskText(event), correctionText: content, project: eventProject(event, content) });
+          const rec = captureUserCorrection({ taskText: prev.task || taskText(event), correctionText: content, project: eventProject(event, content), sourceKind });
           if (rec) {
             if (!store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
               store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
@@ -536,7 +593,7 @@ export function apply(ctx, config = {}) {
         const instructionWanted = cfg.capture.enabled && cfg.capture.captureUserInstructions !== false && s.captures < maxCap && isUserInstruction({ instructionText: content }) && !correctionWanted;
         if (instructionWanted) {
           const durable = isDurableUserInstruction({ instructionText: content });
-          const rec = captureUserInstruction({ instructionText: content, durable, project: eventProject(event, content) });
+          const rec = captureUserInstruction({ instructionText: content, durable, project: eventProject(event, content), sourceKind });
           if (rec) {
             if (!store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
               store.addLesson({ ...rec.lesson, sourceRef: event?.id ?? null });
@@ -654,10 +711,11 @@ export function apply(ctx, config = {}) {
       const m = eventMessage(event);
       const content = contentText(m?.content) || contentText(event?.message?.content) || contentText(event?.content) || contentText(event?.text);
       const source = m?.source ?? data?.source;
-      if (source && typeof source === 'object' && source.kind && source.kind !== 'user') continue;
+      const sourceKind = source && typeof source === 'object' ? (typeof source.kind === 'string' ? source.kind.toLowerCase() : null) : null;
+      if (sourceKind && sourceKind !== 'user') continue;
       const text = String(content || '').replace(/\s+/g, ' ').trim();
-      if (!text) continue;
-      out.push({ seq: event.seq, text });
+      if (!text || isSystemLikeText(text)) continue;
+      out.push({ seq: event.seq, text, sourceKind });
     }
     return out;
   }
@@ -675,11 +733,11 @@ export function apply(ctx, config = {}) {
         let collected = 0;
         const ingest = (sessionId, events) => {
           if (!events || !Array.isArray(events)) return;
-          for (const { text } of extractUserMessages(events)) {
+          for (const { text, sourceKind } of extractUserMessages(events)) {
             if (collected >= limit) return;
             if (seen.has(text) || !isUserInstruction({ instructionText: text })) continue;
             const durable = isDurableUserInstruction({ instructionText: text });
-            const rec = captureUserInstruction({ instructionText: text, durable, project: projectFromText(text) });
+            const rec = captureUserInstruction({ instructionText: text, durable, project: projectFromText(text), sourceKind });
             if (!rec) continue;
             if (store.hasDuplicate(rec.lesson, cfg.capture.dedupeThreshold ?? 0.85)) {
               seen.add(text);
@@ -893,6 +951,10 @@ export function apply(ctx, config = {}) {
     try { selfCheckDispose?.(); } catch { /* ignore */ }
     selfCheckDispose = null;
     try { dashClose?.(); } catch { /* ignore */ }
+    webRouteStore = null;
+    webRouteCfg = null;
+    webRouteSnapshot = null;
+    webRoute = null;
     try {
       store.close();
     } catch {

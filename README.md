@@ -1,5 +1,8 @@
 > 中文（默认） · [English](./README.en.md)
 
+> **欢迎使用与回馈**：如果发现 bug 或有改进想法，欢迎提交 Issue / PR，我会不定期修正与合并；
+> 如果觉得好用，希望能点一个 ⭐ Star，谢谢支持！
+
 # DSH HOST RSI记忆
 
 **给 DSH 做的通用宿主插件，默认面向本地大模型调参；当前重点覆盖 Qwen3.8-27B 与 Qwen3.8 Flash 等本地 27B/轻量模型，也兼容 API 模型。**
@@ -27,7 +30,7 @@
 
 ## 仪表板 / GUI
 
-DSH 重启后：「设置」→「插件」→ **「DSH HOST RSI记忆」** →「打开仪表板」，即可在浏览器查看插件运行状态（启用中/降级、可信/隔离/轨迹、最近记录）。页面每 3 秒轮询 `status.json`，并显示**触发诊断**：已处理事件、注入、捕获、失败信号、最近触发事件与原因。
+DSH 重启后：「设置」→「插件」→ **「DSH HOST RSI记忆」** →「打开仪表板」，即可在浏览器查看插件运行状态（启用中/降级、可信/隔离/轨迹、最近记录）。页面每 5 秒轮询 `status.json`，并显示**触发诊断**：已处理事件、注入、捕获、失败信号、拦截噪声、最近触发事件与原因。
 也可在本机直接跑**独立 demo**（不依赖 DSH）：
 ```
 node demo-serve.mjs                # 本机回环 + 示例记录（默认端口 8788）
@@ -43,14 +46,18 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
 - **诊断与体验工具**：模型或用户可调用 `rsi_events` 查看触发诊断；`rsi_demo_capture` 可写一条示例教训，用于快速验证仪表板/设置页。
 - **用户纠正与长期指令会被记住**：当用户在一轮回复后给出明确纠正或新指令（例如“不要用 requests，改用 httpx”），
   插件会把它记为 **L3 可信教训**。明确的长期偏好 / 规则（“以后都用 httpx”“请记住输出用简洁列表”）
-  也会在用户提出时记录为 `user-instruction` 可信教训；普通一次性任务请求不会写入记忆。
+  也会在用户提出时记录为 `user-instruction` 可信教训；普通一次性任务请求只记隔离 `Q` 记录，
+  不会进入注入，避免污染未来上下文。
+- **来源闸门，防止系统内容污染记忆**：只有 `source.kind === 'user'` 的真实用户消息才会被捕获；
+  DSH 运行时横幅、其他插件注入的指令、以及本插件的自检块都会被拦截并计入「拦截噪声」，
+  每条用户记录还会带上 `sourceKind` 字段方便自查。
 - **指令按项目去重，防止记忆库膨胀**：用户指令会尽量按项目/工作区分组（从指令里的路径或会话上下文提取，
   取不到则归到全局），同项目内近义/重复指令会被 `hasDuplicate` 门槛拦截；不同项目出现相似指令不会被误合并。
 - **教训后台自动搜集到本地插件目录**：`addLesson/addTrajectory` 立即写内存、**批量后台落盘**
   （`flushMs` 防抖）；目录不可写时**降级为纯内存**（`store.disabled`），插件不崩、照常工作。
 - **最小资源占用**：`index.json`+`termindex.json` 仅在打开时读一次，之后全内存；写入合并批处理；
   防抖计时器 `unref`，不占用事件循环 / 不拖住进程退出。
-- **最大兼容性**：纯逻辑层零宿主依赖（可 `node --test`）；宿主侧每个 DSH 调用都带 `?.` 防御 +
+- **最大兼容性**：纯逻辑层零宿主依赖（可 `npm test`）；宿主侧每个 DSH 调用都带 `?.` 防御 +
   try/catch，形状错了就空操作，绝不向宿主抛错。
 
 ## 进化机制（可靠性加权信号阶梯）
@@ -82,17 +89,15 @@ dsh-host-rsi/            # 插件包（代码）
   config.default.json    # 默认配置
   icon.svg               # 设置页图标
   lib/                   # 纯逻辑（可单测，零宿主依赖）
-    spine.js             # 轮生命周期 + 任务变更检测
-    retrieve.js          # 相关度排序 + token 预算
-    inject.js            # 注入文本生成
-    interrogate.js       # 自检指令、[VERIFY] 标签解析、批评 prompt、自一致
-    signal.js            # 信号阶梯判定（L1/L3/REFUTED/CONFIRMED + 权重）
-    scorers.js           # L1 可验证检查（code/math/sql/schema 自动探测）
     capture.js           # 把一轮编排为"已分类教训 + 轨迹"
-    policy.js            # 触发 + 升级 + 预算门控
+    dashboard.js         # dashboardHtml + /rsi/* webserver handler + 本机 dashboard server
+    interrogate.js       # 自检指令、[VERIFY] 标签解析、批评 prompt、自一致
+    policy.js            # 触发 + 升级 + 预算门控 + 来源/系统内容过滤
+    retrieve.js          # 相关度排序 + token 预算
+    scorers.js           # L1 可验证检查（code/math/sql/schema 自动探测）
+    signal.js            # 信号阶梯判定（L1/L3/REFUTED/CONFIRMED + 权重）
     store.js             # 文件存储 + 倒排索引（内存缓存 + 后台防抖写入 + 优雅降级）
     status.js            # 快照 + records + formatStatusReport
-    dashboard.js         # dashboardHtml + /rsi/* webserver handler + 本机 dashboard server
   locale/                # 设置标签 i18n（zh/en）
   test/                  # node:test 套件（含 webserver/client 宿主集成测试）
 ~/.dsh/rsi-memory/      # 数据目录（人可读的权威源；DSH_HOME 环境变量可覆盖）
@@ -119,16 +124,13 @@ node demo-serve.mjs
 宿主专用 bundle。从 GitHub 安装：
 
 ```bash
-dsh plugin --profile web add github:pk14742952-AD/dsh-host-rsi
+dsh plugin add github:pk14742952-AD/dsh-host-rsi
 ```
 
-发布到 npm 后也可以直接安装：
+如果你的 DSH 使用非默认 profile，请按需追加 `--profile <你的profile>`。
+插件**尚未发布到 npm**，当前请使用上面的 GitHub 安装方式，或对本地目录执行
+`plugin_manager install_bundle`。
 
-```bash
-dsh plugin --profile web add dsh-host-rsi
-```
-
-也可以用 DSH 插件管理器对本地目录 `dsh-host-rsi/` 执行 `plugin_manager install_bundle`。
 安装完成后重启 DSH 即可生效，没有构建步骤。
 
 ### 模型适配
@@ -153,15 +155,16 @@ dsh plugin --profile web add dsh-host-rsi
 然后运行：
 
 ```bash
-cd E:\DSH\dsh-host-rsi
-node --test          # 纯逻辑 + 数据层套件（自动发现 test/*.test.js）
+cd dsh-host-rsi
+npm test             # 纯逻辑 + 数据层套件（node --test test/*.test.js，不会碰需要本地模型的 e2e）
 ```
 
 ## 配置（bundle 行 `config`）
 
 见 `config.default.json`：
 - `enabled`（总开关，false=完全空操作）、`dir`（数据目录）、`flushMs`（后台写入防抖 ms）；
-- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`；
+- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,selfCheck,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`；
+  `selfCheck=false` 时不再注入强制 `[VERIFY: ...]` 尾行，适合结构化输出 / schema 约束场景；
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`；
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`；
 - `embeddings`（预留，默认 null；规模大了可换成嵌入近邻）。

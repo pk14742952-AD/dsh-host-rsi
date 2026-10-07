@@ -1,5 +1,8 @@
 > English (default) · [中文](./README.md)
 
+> **Welcome & feedback**: if you find a bug or have an idea, open an Issue or submit a PR and
+> I will fix/merge periodically. If you find this useful, please leave a ⭐ Star — thank you!
+
 # DSH HOST RSI Memory
 
 **A model-agnostic DSH host plugin, tuned by default for local LLMs: primarily Qwen3.8-27B and lightweight local models such as Qwen3.8 Flash, while also working with API models.**
@@ -37,8 +40,8 @@ The core ideas of this project are drawn from and credit the following public wo
 
 After restarting DSH, open **Settings > Plugins > DSH HOST RSI Memory** and click **Open dashboard** to inspect
 plugin status (enabled/degraded, trusted/quarantined/trajectory, recent records). The page polls `status.json`
-every 3 seconds and shows live trigger diagnostics: events seen, injections, captures, failure signals, and the
-last event/reason.
+every 5 seconds and shows live trigger diagnostics: events seen, injections, captures, failure signals, blocked
+noise, and the last event/reason.
 
 You can also run the standalone demo locally without DSH:
 
@@ -63,7 +66,12 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
   new instruction after an assistant reply (for example “don't use requests, use httpx”), the plugin records it
   as a trusted **L3** lesson. Explicit durable preferences/rules (for example `always use httpx` or
   `please remember to use concise bullet lists`) are stored as `user-instruction` trusted lessons too;
-  one-off task requests are not written to memory.
+  one-off task requests are only stored as quarantined `Q` records and never injected, so they cannot pollute
+  future context.
+- **Source gate keeps system content out of memory**: only messages with `source.kind === 'user'` are captured.
+  DSH runtime banners, instructions injected by co-installed plugins, and the plugin's own self-check block are
+  blocked and counted as “blocked noise”; every captured user record also carries a `sourceKind` field for
+  self-audit.
 - **Project-aware instruction dedupe keeps the memory clean**: user instructions are grouped by project/workspace
   when possible (from paths in the instruction or from session context; otherwise they fall back to the global group).
   Near-duplicate instructions within the same project are blocked by `hasDuplicate`; similar text in different projects
@@ -73,7 +81,7 @@ RSI_DEMO_PORT=9000 node demo-serve.mjs
   the plugin degrades to pure memory (`store.disabled`) without crashing.
 - **Minimal resource usage**: `index.json` + `termindex.json` are read once at startup then kept in memory;
   writes are batched; the debounce timer is `unref`ed so it does not hold the event loop or process open.
-- **Max compatibility**: the pure logic layer has zero host dependencies (covered by `node --test`);
+- **Max compatibility**: the pure logic layer has zero host dependencies (covered by `npm test`);
   every DSH call on the host side is wrapped with fallback checks and try/catch. If an event shape is wrong,
   it becomes a no-op instead of throwing at the host.
 
@@ -107,17 +115,15 @@ dsh-host-rsi/          # plugin package (code)
   config.default.json  # default config
   icon.svg             # settings icon
   lib/                 # pure logic (unit-testable, no host dependency)
-    spine.js           # turn lifecycle + task-change detection
-    retrieve.js        # relevance ranking + token budget
-    inject.js          # injection text generation
-    interrogate.js     # self-check instruction, [VERIFY] tag parsing, critic prompt, self-consistency
-    signal.js          # signal ladder (L1/L3/REFUTED/CONFIRMED + weights)
-    scorers.js         # L1 verifiable checks (code/math/sql/schema auto-detection)
     capture.js         # composes a turn into classified lesson + trajectory
-    policy.js          # trigger + escalation + budget gating
+    dashboard.js       # dashboardHtml + /rsi/* webserver handler + standalone dashboard server
+    interrogate.js     # self-check instruction, [VERIFY] tag parsing, critic prompt, self-consistency
+    policy.js          # trigger + escalation + budget gating + source/system-content filtering
+    retrieve.js        # relevance ranking + token budget
+    scorers.js         # L1 verifiable checks (code/math/sql/schema auto-detection)
+    signal.js          # signal ladder (L1/L3/REFUTED/CONFIRMED + weights)
     store.js           # file store + inverted index (memory cache + debounced background writes + graceful degradation)
     status.js          # snapshot + records + formatStatusReport
-    dashboard.js       # dashboardHtml + /rsi/* webserver handler + standalone dashboard server
   locale/              # settings i18n (zh/en)
   test/                # node:test suite (including webserver/client host integration tests)
 ~/.dsh/rsi-memory/     # data directory (human-readable source of truth; DSH_HOME env overrides)
@@ -144,17 +150,14 @@ Open the loopback URL printed in the console to see the dashboard with sample me
 Host-specific bundle. Install from GitHub:
 
 ```bash
-dsh plugin --profile web add github:pk14742952-AD/dsh-host-rsi
+dsh plugin add github:pk14742952-AD/dsh-host-rsi
 ```
 
-After publishing to npm, you can also install it directly:
+If your DSH uses a non-default profile, append `--profile <your-profile>` as needed.
+The package is **not published to npm yet**; use the GitHub install above, or run
+`plugin_manager install_bundle` against a local `dsh-host-rsi/` directory.
 
-```bash
-dsh plugin --profile web add dsh-host-rsi
-```
-
-Or use the plugin manager to `install_bundle` from the local `dsh-host-rsi/` directory. Restart DSH after
-installation; no build step is needed.
+Restart DSH after installation; no build step is needed.
 
 ### Model compatibility
 
@@ -182,15 +185,16 @@ In `index.js`, the event payload shape is "document name + defensive assumptions
 Then run:
 
 ```bash
-cd E:\DSH\dsh-host-rsi
-node --test          # pure logic + data-layer suite (auto-discovers test/*.test.js)
+cd dsh-host-rsi
+npm test             # pure logic + data-layer suite (node --test test/*.test.js; does not touch the live-model e2e)
 ```
 
 ## Configuration (bundle line `config`)
 
 See `config.default.json`:
 - `enabled` (master switch; false = fully no-op), `dir` (data directory), `flushMs` (background debounce ms);
-- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`;
+- `inject.{topK,tokenBudget,candCap,enabled,includeQuarantined,oncePerTask,selfCheck,maxInjectsPerTask,reinjectOn,compactTopK,compactTokenBudget}`;
+  `selfCheck: false` skips the mandated `[VERIFY: ...]` trailer, for schema-constrained / structured-output callers;
 - `capture.{enabled,maxPerSession,minChars,dedupeThreshold,captureUserCorrections,captureUserInstructions}`;
 - `escalate.{enabled,maxCriticsPerSession,selfConsistency,threshold}`;
 - `embeddings` (reserved, default null; can swap in embedding neighbors at larger scale).
