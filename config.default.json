@@ -54,7 +54,7 @@
     "enabled": true,
     "maxRetries": 2,
     "maxPerSession": 4,
-    "thresholdEmpty": 400,
+    "thresholdEmpty": 0,
     "thresholdFile": 2000,
     "sameToolStreak": 3,
     "fileTurnRe": "file|write|create|generate|implement|fix|script|\\.(?:js|ts|py|json|md|yml|yaml)|文件|创建|编写|生成|修复|脚本",

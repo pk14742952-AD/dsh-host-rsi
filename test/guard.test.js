@@ -2,17 +2,30 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { OK, GUARD_STATES, classifyLoop, guardCorrectionPrompt, extractPlanLines, isFileTurn } from '../lib/guard.js';
 
-const base = { thresholdEmpty: 400, thresholdFile: 2000, sameToolStreak: 3 };
+const base = { thresholdFile: 2000, sameToolStreak: 3 };
+// NOTE: thresholdEmpty now defaults to 0 (only a fully empty answer). The old 400-char default
+// misfired on legitimate short dialogue turns (see issue#3 3188-round report §2.3 calibration).
 
 test('classifyLoop: a substantial deliverable is OK', () => {
   const answer = '完成。\n'.repeat(200); // > 400 chars
   assert.deepEqual(classifyLoop({ ...base, answerText: answer }), { state: OK, reason: null });
 });
 
-test('classifyLoop: empty and short prose turns are EMPTY when no tools ran', () => {
+test('classifyLoop: empty texts are EMPTY, short prose turns are OK (calibrated)', () => {
   assert.equal(classifyLoop({ ...base, answerText: '' }).state, 'EMPTY');
-  assert.equal(classifyLoop({ ...base, answerText: '好的' }).state, 'EMPTY');
-  assert.equal(classifyLoop({ ...base, answerText: 'x'.repeat(399) }).state, 'EMPTY');
+  assert.equal(classifyLoop({ ...base, answerText: '好的' }).state, OK, 'short dialogue answer is not a failed delivery');
+  assert.equal(classifyLoop({ ...base, answerText: 'x'.repeat(399) }).state, OK, '399 chars is not empty under the default 0 threshold');
+  // explicit thresholdEmpty still enforces when a caller opts in (deliverable profile)
+  const strict = classifyLoop({ ...base, thresholdEmpty: 400, answerText: 'x'.repeat(399) });
+  assert.equal(strict.state, 'EMPTY', 'explicit thresholdEmpty=400 opt-in still gates short answers');
+});
+
+test('classifyLoop: finish_reason=length with EMPTY content is EMPTY (budget burned), with content TRUNCATED', () => {
+  const empty = classifyLoop({ ...base, answerText: '', finishReason: 'length' });
+  assert.equal(empty.state, 'EMPTY', 'length + no content = vacuum delivery');
+  assert.match(empty.reason, /budget burned/);
+  const withContent = classifyLoop({ ...base, answerText: 'x'.repeat(500), finishReason: 'length' });
+  assert.equal(withContent.state, 'TRUNCATED');
 });
 
 test('classifyLoop: tool-backed short summaries are not length-flagged', () => {

@@ -131,7 +131,7 @@ const Config = {
       enabled: true, // L3 delivery guard from D:\ninfer 04/05 防治文档
       maxRetries: 2,
       maxPerSession: 4,
-      thresholdEmpty: 400,
+      thresholdEmpty: 0, // only a fully empty answer; 400-char gate misfired on short chat turns (see issue#3 report)
       thresholdFile: 2000,
       sameToolStreak: 3,
       fileTurnRe: 'file|write|create|generate|implement|fix|script|\.(?:js|ts|py|json|md|yml|yaml)|文件|创建|编写|生成|修复|脚本',

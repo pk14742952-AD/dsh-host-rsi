@@ -43,6 +43,19 @@
 
 ## 📢 Release Notes
 
+### v0.2.3 (2026-10-12) — guard thresholds calibrated against real load
+
+- **EMPTY no longer misfires on short dialogue**: the default now flags only a fully empty
+  delivery; the old 400-char threshold wrongly caught legitimate short replies (e.g. "好的").
+  Calibrated per the 3188-round SWE-bench findings in
+  [ninfer-fusion-kvmem issue#3](https://github.com/1314521gjy/ninfer-fusion-kvmem/issues/3).
+  File-turn deliveries still enforce the 2000-char threshold.
+- **`finish_reason=length` with empty content is EMPTY, not TRUNCATED**: the dominant
+  degenerate form in the report (206/3188 rounds = 6.5%, reasoning budget burned with nothing
+  delivered) now gets the "budget burned, nothing delivered" correction instead of a
+  truncation hint.
+- Test suite: **139 passing**.
+
 ### v0.2.2 (2026-10-11) — making the plugin actually work
 
 - **Self-pollution fixed**: system banners / `<goal_round>` / skill-catalog blocks are no longer

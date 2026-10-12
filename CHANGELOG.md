@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-10-12
+
+### Fixed
+
+- **EMPTY guard calibrated to real field data** (`lib/guard.js`): the 400-char `thresholdEmpty`
+  default misfired on legitimate short dialogue turns ("好的", thumb replies). Per the
+  3188-round SWE-bench findings reported in [ninfer-fusion-kvmem issue#3]
+  (https://github.com/1314521gjy/ninfer-fusion-kvmem/issues/3, §2.3 calibration lesson),
+  the default is now `0` — only a fully empty answer is EMPTY; a non-zero threshold is an
+  explicit opt-in (deliverable profile). File turns still enforce `thresholdFile` (2000).
+- **`finish_reason=length` + empty content is EMPTY, not TRUNCATED** (`lib/guard.js`): the
+  report's dominant degenerate form (206/3188 rounds: reasoning budget burned, content empty)
+  is now classified EMPTY ("budget burned, nothing delivered") so the correction asks for
+  content; length-with-content stays TRUNCATED.
+- Tests: `test/guard.test.js` updated to the calibrated semantics (short prose → OK; explicit
+  `thresholdEmpty:400` opt-in still gates; length+empty → EMPTY). Suite: **139 passing / 0 failing**.
+
 ## [0.2.2] - 2026-10-11
 
 ### Fixed
