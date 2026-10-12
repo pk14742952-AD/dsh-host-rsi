@@ -173,7 +173,26 @@ test('graceful disable: unwritable dir -> in-memory-only, addLesson still works,
   const l = store.addLesson({ domain: 'x', summary: 'still remembered in memory', trusted: true });
   assert.equal(store.list().length, 1);
   assert.equal(store.list()[0].id, l.id);
+  store.addTrajectory({ ts: 1, task: 't', domain: 'x', lesson: 'a trace' }); // must not throw when disabled
   assert.equal(store.flushSync(), false); // no persistence happened
+  store.close();
+});
+
+test('graceful disable: repeated flushes drain the trace/mirror buffers (no unbounded growth)', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-'));
+  const asFile = path.join(base, 'a-file');
+  fs.writeFileSync(asFile, 'x', 'utf8');
+  const store = openStore(path.join(asFile, 'sub'), { flushMs: 100000 });
+  store.ensureLayout();
+  assert.equal(store.disabled, true);
+  for (let i = 0; i < 200; i++) {
+    store.addLesson({ domain: 'x', summary: `lesson ${i}`, trusted: true });
+    store.addTrajectory({ ts: i, task: `t${i}`, domain: 'x', lesson: `trace ${i}` });
+    store.flushSync();
+  }
+  // Buffers were drained every flush: nothing leaks, memory stays bounded.
+  assert.equal(store.trajBuf.length, 0);
+  assert.equal(store.mirrorBuf.length, 0);
   store.close();
 });
 

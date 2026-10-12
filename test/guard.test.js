@@ -52,6 +52,23 @@ test('classifyLoop: SHELL_LOOP when a turn only repeats one tool with no text', 
   assert.equal(mixed.state, 'EMPTY', 'not a same-tool streak');
 });
 
+test('classifyLoop: three DIFFERENT commands through the same tool are NOT a shell loop', () => {
+  const calls = [
+    { name: 'pwsh', command: 'npm test' },
+    { name: 'pwsh', command: 'git status' },
+    { name: 'pwsh', command: 'ls -la' },
+  ];
+  const v = classifyLoop({ ...base, answerText: '', toolCalls: calls });
+  assert.equal(v.state, 'EMPTY', 'distinct commands = real work, not a loop');
+  // ...but the SAME command repeated IS a loop.
+  const loop = classifyLoop({ ...base, answerText: '', toolCalls: [
+    { name: 'pwsh', command: 'npm test' },
+    { name: 'pwsh', command: 'npm test' },
+    { name: 'pwsh', command: 'npm test' },
+  ] });
+  assert.equal(loop.state, 'SHELL_LOOP');
+});
+
 test('extractPlanLines + isFileTurn are regex-driven and safe', () => {
   assert.deepEqual(extractPlanLines('OPT: a\nNEXT: b\n普通行'), ['opt: a', 'next: b']);
   assert.equal(isFileTurn('please write a script', 'file|write|create'), true);

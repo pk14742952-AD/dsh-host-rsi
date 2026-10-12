@@ -4,6 +4,59 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2026-10-11
+
+### Fixed
+
+- **Self-pollution gate closed** (`lib/policy.js`): `SYSTEM_BOILERPLATE_RE` now also matches
+  `<goal_round>` round frames, `Current runtime context` snapshots, `<system-reminder>`
+  skill-catalog blocks, and `Objective:"…" Round: N/M` lines — the 11 rows of plugin-written
+  system text (10.5% of the trusted memory) that were being captured as trusted L3 "user
+  corrections/instructions" and re-injected into unrelated tasks are now blocked. The
+  `isUserCorrection` length fallback was raised 20 → 40 chars and now also requires the text
+  to pass `isSystemLikeText`, so a neutral 22–40 char sentence is no longer stored verbatim.
+- **Cross-kind instruction dedupe** (`lib/store.js` `hasDuplicate`): identical user text
+  captured as both a correction and an instruction (observed: 22% of the real store) is now
+  detected as a duplicate — the comparison strips only the `user-correction` /
+  `user-instruction` domain prefix, so projects stay isolated.
+- **Convergence false-negative** (`lib/convergence.js` `looksPassed`): `"3 passed; 0 failed"`
+  was judged as FAILED because the negative check looked for the bare substring `failed`;
+  the check is now zero-count aware (`fail(?:ed|ure)?` with a `0`-count token on either side),
+  and the build family additionally rejects any literal `fail(ed|ure)` so `BUILD FAILED`
+  never slips through.
+- **Non-atomic store write + permanent disable** (`lib/store.js`): `index.json` /
+  `termindex.json` are now written atomically (tmp file + rename); a corrupt index is
+  quarantined as `.corrupt-<ts>` and rebuilt instead of disabling the store forever.
+  A disabled store now also drains its trajectory/mirror buffers so a degraded session does
+  not leak memory.
+- **Retrieval noise filtering** (`lib/retrieve.js`): lessons that merely echo the current
+  task text (≥80% token overlap with the task after stripping the capture prefix) are
+  dropped; the estimateTokens CJK cost is now ~1.5 chars/token instead of a uniform /4
+  (undercounting Chinese by ~3×); non-L1 lessons with a distinct `fix` now actually inject
+  it (`-> fix: …`) instead of silently dropping it.
+- **User REFUTED now trusted** (`lib/signal.js`): a user tap that says the answer is wrong
+  is the single strongest corrective signal there is — it is classified L3 trusted weight 1.0
+  and injected, instead of being quarantined while the weaker L2 self-REFUTED was trusted.
+- **SHELL_LOOP false positive** (`lib/guard.js`): the loop detector compared only bare tool
+  names, so three different `pwsh` commands were misjudged as a loop; it now compares the
+  full tool identity (name + command), and a genuinely repeated identical command is still
+  caught.
+- **Scorer soundness** (`lib/scorers.js`): bare `node` is no longer a test command
+  (`node --test` is), and a tool result with `ok: undefined` no longer counts as a pass
+  without at least one explicit `ok: true` or a fully unshaped result.
+- **Bounded rejected-answer excerpt** (`lib/guard.js`): the correction prompt that re-feeds a
+  REJECTED answer into the model now truncates to head 6000 + tail 800 chars with a marker
+  instead of passing the whole (potentially 20k+) turn.
+- `outcomeSignal` no longer throws when `toolResults` is missing (TypeError on `.some`).
+
+### Added
+
+- `scripts/compare-baseline.mjs` — before/after comparison harness (对照测试): runs the same
+  scenario battery against an old baseline, the working tree, and the installed profile, and
+  prints a side-by-side table. Report: `COMPARISON-0.2.2.md`.
+- Regression tests for every fix above (policy, store, convergence, retrieve, guard, signal,
+  scorers). Full suite: **138 passed / 0 failed** (was 121).
+
 ## [0.2.1] - 2026-10-07
 
 ### Changed

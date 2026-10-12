@@ -11,10 +11,14 @@ test('L1 definitive check wins and is trusted (pass or fail both corrective)', (
   });
 });
 
-test('L3 user tap is authoritative and overrides self-verdict', () => {
+test('L3 user tap is authoritative and overrides self-verdict; both confirm AND refute are trusted corrections', () => {
   const c = classifySignal({ verdict: 'CONFIRMED', userTap: { verdict: 'REFUTED' } });
   assert.equal(c.layer, LAYERS.L3);
-  assert.equal(c.trusted, false); // user said wrong
+  assert.equal(c.trusted, true, 'user refutation is the strongest corrective signal — trusted, not quarantined');
+  assert.match(c.note, /refuted -> corrective lesson/);
+  const ok = classifySignal({ userTap: { verdict: 'CONFIRMED' } });
+  assert.equal(ok.layer, LAYERS.L3);
+  assert.equal(ok.trusted, true);
 });
 
 test('self-REFUTED becomes a trusted corrective lesson', () => {

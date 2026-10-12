@@ -15,6 +15,23 @@ test('code scorer: failing tool result means not passed', () => {
   assert.equal(r.passed, false);
 });
 
+test('code scorer: bare `node` is not a test command', () => {
+  const r = runScorers({ toolResults: [{ name: 'node', ok: true }] });
+  assert.equal(r.definitive, false, 'running a plain node script proves nothing');
+});
+
+test('code scorer: node --test IS a test command and explicit ok=true passes', () => {
+  const r = runScorers({ toolResults: [{ name: 'node --test', ok: true }] });
+  assert.equal(r.definitive, true);
+  assert.equal(r.passed, true);
+});
+
+test('code scorer: ok:undefined alone still counts as an executed check (pass)', () => {
+  const r = runScorers({ toolResults: [{ name: 'jest', ok: undefined }] });
+  assert.equal(r.definitive, true);
+  assert.equal(r.passed, true);
+});
+
 test('no applicable scorer -> not definitive', () => {
   assert.deepEqual(runScorers({ task: 'write a poem' }), { definitive: false });
 });
