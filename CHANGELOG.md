@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-10-12
+
+### Fixed
+
+- **Dashboard surfaces the guard rescue metric** (`lib/dashboard.js`): the GUI showed
+  fired / retries / undelivered but omitted the "救回 (rescued)" counter — the single most
+  important value metric in the 3188-round report (206/3188 empty batches, 100% rescued via
+  one correction round). The status text report already had it; the dashboard card and the
+  runtime meta line now include `guard.rescued` too.
+- Test: `test/webserver.test.js` asserts the dashboard HTML contains the rescued card, the
+  render binding, and the meta-line label, so the metric cannot silently regress again.
+- Suite: **141 passing / 0 failing**.
+
 ## [0.2.4] - 2026-10-12
 
 ### Fixed

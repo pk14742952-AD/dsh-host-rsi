@@ -43,6 +43,15 @@
 
 ## 📢 Release Notes
 
+### v0.2.5 (2026-10-12) — dashboard shows the rescue metric
+
+- **New "救回 (rescued)" card on the dashboard**: the core guard value metric — in the
+  3188-round report all 206 empty batches were rescued by one correction round
+  ([issue#3](https://github.com/1314521gjy/ninfer-fusion-kvmem/issues/3) §2.3). The GUI only
+  showed fired / retries / undelivered before; the dashboard card and runtime summary now
+  expose `guard.rescued`, with a regression test guarding it.
+- Test suite: **141 passing**.
+
 ### v0.2.4 (2026-10-12) — targeted correction for budget-burned turns + comparison wrap-up
 
 - **Targeted correction wording**: when `finish_reason=length` with empty content (reasoning

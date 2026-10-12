@@ -34,6 +34,16 @@ test('dashboardHtml() is self-contained + embeds the fetch base', () => {
   assert.ok(html.includes('const BASE = "/rsi/";'));
 });
 
+test('dashboardHtml() shows the guard rescue metric (rescued count)', () => {
+  // The 3188-round report's core value is that every empty batch was rescued; the
+  // dashboard must surface the rescued counter alongside fired/retries/undelivered.
+  const html = dashboardHtml('/rsi/');
+  assert.ok(html.includes('id="guardRescued"'), 'dashboard has a rescued card');
+  assert.ok(html.includes('救回'), 'rescued card labelled in Chinese');
+  assert.ok(html.includes('guardRescued").textContent = rt.guard?.rescued ?? 0'), 'render() binds the rescued metric');
+  assert.ok(html.includes('救回 " + (rt.guard?.rescued ?? 0)'), 'runtime meta line includes rescued');
+});
+
 test('rsiWebserverHandler serves /rsi -> status page HTML', () => {
   const store = storeWithData();
   const h = rsiWebserverHandler(store, { enabled: true, dashboard: { recent: 5 } });
