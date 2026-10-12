@@ -635,3 +635,112 @@ test('delivery guard schedules one correction round and marks rescue when fixed'
 
   cleanup();
 });
+
+test('delivery guard final chance: one session-level ultimatum after the retry budget is exhausted, then undelivered', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-guard-fc-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const followups = [];
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    agent: {
+      followup(p) {
+        followups.push(p);
+      },
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  // three empty budget-burned turns: correct. rounds 1+2 exhaust the correction budget
+  // (maxRetries 2); the third must be the ONE session-level final chance, not undelivered
+  for (let i = 0; i < 3; i += 1) {
+    eventHandlers['turn/end']({ task: 'write a script', assistantText: '', finishReason: 'length', sessionId: 'gfc1' });
+  }
+  assert.equal(followups.length, 3, 'two correction rounds + one final chance');
+  assert.match(followups[2], /\[rsi-guard\]\[final\]/, 'third followup is the final ultimatum');
+  let diag = await toolRuns.rsi_events({});
+  assert.equal(diag.guard.fired, 3);
+  assert.equal(diag.guard.retries, 2);
+  assert.equal(diag.guard.finalChances, 1);
+  assert.equal(diag.guard.undelivered, 0, 'final chance must not yet be counted undelivered');
+
+  // a real deliverable after the ultimatum still counts as rescued
+  eventHandlers['turn/end']({
+    task: 'write a script',
+    assistantText: 'done, script written to tests/out.js',
+    toolResults: [{ name: 'pwsh', ok: true }],
+    sessionId: 'gfc1',
+  });
+  diag = await toolRuns.rsi_events({});
+  assert.equal(diag.guard.rescued, 1, 'deliverable after the final chance rescues the session');
+  assert.equal(diag.guard.undelivered, 0);
+
+  cleanup();
+});
+
+test('delivery guard final chance: only once per session, then undelivered is recorded', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rsi-guard-fc2-'));
+  const eventHandlers = {};
+  const toolRuns = {};
+  const followups = [];
+  const ctx = {
+    events: {},
+    on(name, cb) {
+      eventHandlers[name] = cb;
+      return () => {};
+    },
+    inject() {
+      return () => {};
+    },
+    agent: {
+      followup(p) {
+        followups.push(p);
+      },
+    },
+    tools: {
+      register(opts) {
+        toolRuns[opts.name] = opts.run;
+        return () => {};
+      },
+    },
+  };
+  const cleanup = apply(ctx, {
+    enabled: true,
+    dir,
+    dashboard: { enabled: false, webserver: false },
+    capture: { enabled: true, maxPerSession: 10, minChars: 120, dedupeThreshold: 0.8 },
+    escalate: { enabled: true, maxCriticsPerSession: 3, selfConsistency: 1, threshold: 0.6 },
+  });
+
+  // 4 empty length-burned turns: EMPTY has priority over FIXED_POINT, so each turn trips
+  // the guard; after retry-2 the budget is exhausted -> final chance once -> undelivered
+  for (let i = 0; i < 4; i += 1) {
+    eventHandlers['turn/end']({ task: 'write a script', assistantText: '', finishReason: 'length', sessionId: 'gfc2' });
+  }
+  assert.equal(followups.length, 3, 'still exactly two correction rounds + one final chance');
+  const diag = await toolRuns.rsi_events({});
+  assert.equal(diag.guard.finalChances, 1, 'the final chance fires exactly once');
+  assert.equal(diag.guard.undelivered, 1, 'the fourth empty turn is recorded undelivered');
+  assert.equal(diag.guard.fired, 4);
+
+  cleanup();
+});

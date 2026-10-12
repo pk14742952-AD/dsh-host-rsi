@@ -22,7 +22,7 @@ import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
 import { outcomeSignal, shouldCapture, shouldEscalate, criticBudgetOk, isUserCorrection, isUserInstruction, isDurableUserInstruction, isSystemLikeText, projectFromText } from './lib/policy.js';
 import { STRONG_STEER, SOFT_STEER, POLICY_TEXT, commandOf, createState, isModelActive, isShellTool, isSourceEdit, normalizeModels, observeShell, resetState, resultText } from './lib/convergence.js';
-import { classifyLoop, guardCorrectionPrompt, isFileTurn } from './lib/guard.js';
+import { classifyLoop, guardCorrectionPrompt, guardFinalChancePrompt, isFileTurn } from './lib/guard.js';
 import { startDashboardServer, rsiWebserverHandler } from './lib/dashboard.js';
 import { snapshot, records as fetchRecords, formatStatusReport } from './lib/status.js';
 
@@ -123,6 +123,10 @@ const Config = {
     convergence: {
       enabled: true, // ported from dsh-bonsai-fast / pi-extension-convergence
       repeatThreshold: 3,
+      // Sliding-window size for repeated-pass detection (issue#3 S1: a ring window
+      // "cures" repeated-verification loops; a cumulative histogram only "interrupts").
+      // Repeat hits within the window trigger SOFT_STEER; older hits outside it do not.
+      windowSize: 8,
       // Empty list = every model DSH runs (local 27B, Flash, API). Set e.g. ['*27b*']
       // only when a user wants to restrict convergence steering to specific models.
       models: [],
@@ -134,6 +138,7 @@ const Config = {
       thresholdEmpty: 0, // only a fully empty answer; 400-char gate misfired on short chat turns (see issue#3 report)
       thresholdFile: 2000,
       sameToolStreak: 3,
+      finalChance: true, // one session-level ultimatum after the per-turn retry budget is exhausted (issue#3 3/50)
       fileTurnRe: 'file|write|create|generate|implement|fix|script|\.(?:js|ts|py|json|md|yml|yaml)|文件|创建|编写|生成|修复|脚本',
       tasksRe: 'write|create|fix|implement|optimize|design|analyze|generate|refactor|debug|test|build|migrate|check|translate|convert|编写|写|创建|修复|实现|优化|设计|分析|生成|重构|调试|测试|构建|迁移|检查|翻译|转换',
       recordTrajectory: true,
@@ -319,7 +324,7 @@ export function apply(ctx, config = {}) {
     skippedCapture: 0,
     blockedNoise: 0,
     convergence: { steers: 0, strong: 0, soft: 0 },
-    guard: { fired: 0, retries: 0, rescued: 0, undelivered: 0 },
+    guard: { fired: 0, retries: 0, rescued: 0, undelivered: 0, finalChances: 0 },
     lastEvent: null,
     lastEventAt: null,
     lastCapture: null,
@@ -411,6 +416,7 @@ export function apply(ctx, config = {}) {
         injectDispose: null,
         guardRetries: 0,
         guardAwaiting: null,
+        guardFinalChance: false,
         prevAnswer: '',
       });
     }
@@ -541,6 +547,18 @@ export function apply(ctx, config = {}) {
       runtime.guard.retries += 1;
       runtime.lastReason = `guard:${verdict.state}`;
       followup(guardCorrectionPrompt(task, verdict.state, answer, verdict.reason));
+      return true;
+    }
+    // Instance-level final defense (issue#3: 3/50 instances finish empty-handed even with a
+    // per-turn guard). When the per-turn retry budget is exhausted, issue ONE session-level
+    // ultimatum before marking the instance undelivered; a subsequent OK still counts as a
+    // rescue. Never more than once per session, and only when a followup channel exists.
+    if (g.finalChance !== false && hasFollowup && !s.guardFinalChance) {
+      s.guardFinalChance = true;
+      s.guardAwaiting = { state: verdict.state, attempts: attempt + 1 };
+      runtime.guard.finalChances += 1;
+      runtime.lastReason = `guard-final-chance:${verdict.state}`;
+      followup(guardFinalChancePrompt(task, verdict.state, verdict.reason));
       return true;
     }
     runtime.guard.undelivered += 1;
@@ -1022,7 +1040,7 @@ export function apply(ctx, config = {}) {
         let steer = null;
         try {
           if (exec?.agent && isShellTool(exec.name) && result?.isError !== true && convergenceActiveFor(exec.agent)) {
-            steer = observeShell(convergenceStateOf(exec.agent), commandOf(exec.arguments), resultText(result), cfg.convergence.repeatThreshold);
+            steer = observeShell(convergenceStateOf(exec.agent), commandOf(exec.arguments), resultText(result), cfg.convergence.repeatThreshold, cfg.convergence.windowSize);
           }
         } catch { /* never block the tool waterfall */ }
         const downstream = await next?.();

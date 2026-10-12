@@ -43,6 +43,27 @@
 
 ## 📢 Release Notes
 
+### v0.2.6 (2026-10-12) — instance-level final chance + windowed convergence
+
+- **Instance-level final ultimatum (second line of defense)**: previously, once the per-turn
+  correction budget (`maxRetries` / `maxPerSession`) was exhausted, the session was marked
+  "undelivered" and abandoned — exactly the shape of the report's 3/50 empty-handed instances.
+  Now, immediately before an instance would be recorded undelivered, the plugin issues **one**
+  session-level ultimatum (`guardFinalChancePrompt`): it names the rejected state, forbids more
+  tool calls / silence / repetition, and demands a compact real deliverable or a one-line
+  blocker; a subsequent OK still counts as a rescue. Soft gate: `guard.finalChance` (default
+  `true`), fires at most once per session and only when a followup channel exists.
+- **Windowed convergence detection (ring window)**: repeated-pass detection moves from a
+  cumulative histogram to a sliding window — the report's S1 lesson is a ring window "cures"
+  repeated-verification loops while a cumulative histogram only "interrupts". `observeShell`
+  gained `windowSize = 8` (default); only hits inside the window count toward SOFT_STEER,
+  `fingerprintCounts` stays as a cumulative diagnostic. The original contract is unchanged:
+  three consecutive repeats still trigger; only stale repeats from long ago stop firing.
+- **New telemetry** `runtime.guard.finalChances`: new dashboard card "最后通牒" + status report.
+- Verification: `scripts/compare-baseline.mjs` 3-column run (v0.2.5 baseline / workspace /
+  installed profile) — **19/19 scenarios identical**, zero behavioral regression; suite
+  **146 passing**.
+
 ### v0.2.5 (2026-10-12) — dashboard shows the rescue metric
 
 - **New "救回 (rescued)" card on the dashboard**: the core guard value metric — in the

@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-10-12
+
+### Added
+
+- **Instance-level second line of defense — final chance** (`lib/guard.js`, `index.js`):
+  previously, when the per-turn correction budget (`maxRetries`, `maxPerSession`) was exhausted,
+  the session was marked `undelivered` and abandoned. That mirrors the report's 3/50 instances
+  that finished empty-handed despite a per-turn guard. Now, right before an instance would be
+  recorded as undelivered, the plugin issues **one** session-level ultimatum per session
+  (`guardFinalChancePrompt`): name the rejected state, forbid tool calls / silence / repetition,
+  and demand a compact real deliverable or a one-line blocker. A subsequent OK still counts as
+  a rescue. The gate is soft: `guard.finalChance !== false` and only when a followup channel
+  exists (`hasFollowup`); it never fires more than once per session (session flag
+  `guardFinalChance`). Config: `guard.finalChance` (default `true`).
+- **New telemetry cell** `runtime.guard.finalChances`, surfaced in the dashboard card
+  "最后通牒" / meta line and in the status text report (`lib/dashboard.js`, `lib/status.js`).
+- **Sliding-window convergence detection** (`lib/convergence.js`, `index.js`): repeated-pass
+  detection now uses a ring window instead of a cumulative histogram only. The report's S1
+  lesson: a ring window "cures" repeated-verification loops; a cumulative histogram only
+  "interrupts". `observeShell(state, command, text, repeatThreshold, windowSize=8)` pushes each
+  passing fingerprint into `state.recentPasses` and counts only hits inside the window;
+  `fingerprintCounts` remains as a cumulative diagnostic. `index.js` passes
+  `cfg.convergence.windowSize`; config default `windowSize: 8` — the original 3×-repeat
+  contract is unchanged (three consecutive passes are always within any window ≥ 3), only
+  stale repeats from long ago stop triggering SOFT_STEER.
+- Tests: both behaviors covered — `test/guard.test.js` (final-chance prompt shape + boundedness),
+  `test/index.smoke.test.js` (retry-budget-exhausted → one final chance → rescue on deliverable;
+  and final-chance-fires-exactly-once → undelivered), `test/convergence.test.js` (window vs
+  cumulative histogram: interleaved passes never trigger, cumulative count still records;
+  window never shrinks the 3× contract).
+- Suite: **146 passing / 0 failing**; 3-column comparison harness
+  (`scripts/compare-baseline.mjs`) re-run: **19/19 scenarios identical** vs the v0.2.5 baseline
+  (workspace and installed profile both match), confirming zero behavioral regression.
+
 ## [0.2.5] - 2026-10-12
 
 ### Fixed

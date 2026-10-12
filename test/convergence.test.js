@@ -127,6 +127,38 @@ test('observeShell: a zero-failure test report participates in convergence', () 
   assert.equal(observeShell(s, cmd, '3 passed; 0 failed', 3), SOFT_STEER);
 });
 
+test('observeShell: the SOFT_STEER decision uses the sliding window, not the cumulative histogram (issue#3 S1)', () => {
+  // The same fingerprint appears 3 times SPREAD OUT across the session (never consecutively,
+  // so the consecutivePassCount guard stays under threshold). A cumulative histogram would
+  // see count=3 and over-trigger a steer inside a long, healthy session; the ring window of
+  // 4 only ever sees at most 2 of those repeats -> no steer. This is the "cure, don't
+  // interrupt" property from the report.
+  const s = createState();
+  const cmd = 'node --test test/a.test.js'; // fingerprint npm_test:default
+  const other = 'python -m pytest tests/ -q'; // fingerprint pytest:all, same family
+  const ok = '2 passed; 0 failed';
+  const W = 4;
+  // Positions 1,3,5 hold the tracked fingerprint; 2,4,6 hold the distractors.
+  assert.equal(observeShell(s, cmd, ok, 3, W), null);
+  assert.equal(observeShell(s, other, ok, 3, W), null);
+  assert.equal(observeShell(s, cmd, ok, 3, W), null);
+  assert.equal(observeShell(s, other, ok, 3, W), null);
+  assert.equal(observeShell(s, cmd, ok, 3, W), null, 'cumulative count 3 but windowed count 2 < threshold 3 -> no steer');
+  assert.equal(observeShell(s, other, ok, 3, W), null);
+  assert.equal(observeShell(s, cmd, ok, 3, W), null, 'tracked fingerprint keeps steering off even after more passes');
+  // Cumulative histogram keeps full history; the window does not:
+  assert.equal(s.fingerprintCounts.get(classifyCheck(cmd).fingerprint), 4, 'cumulative histogram still counts 4 (positions 1,3,5,7)');
+});
+
+test('observeShell: the window never shrinks the original "3 repeats -> steer" contract', () => {
+  const s = createState();
+  const args = { command: 'npm test' };
+  const text = '1 passed';
+  assert.equal(observeShell(s, commandOf(args), text, 3), null);
+  assert.equal(observeShell(s, commandOf(args), text, 3), null);
+  assert.equal(observeShell(s, commandOf(args), text, 3), SOFT_STEER, 'default window preserves 3x repeat behaviour');
+});
+
 test('POLICY_TEXT exists and is a stable completion policy', () => {
   assert.match(POLICY_TEXT, /TASK COMPLETION POLICY/);
   assert.match(POLICY_TEXT, /within 8000 tokens/);

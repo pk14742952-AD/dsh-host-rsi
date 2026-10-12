@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OK, GUARD_STATES, classifyLoop, guardCorrectionPrompt, extractPlanLines, isFileTurn } from '../lib/guard.js';
+import { OK, GUARD_STATES, classifyLoop, guardCorrectionPrompt, guardFinalChancePrompt, extractPlanLines, isFileTurn } from '../lib/guard.js';
 
 const base = { thresholdFile: 2000, sameToolStreak: 3 };
 // NOTE: thresholdEmpty now defaults to 0 (only a fully empty answer). The old 400-char default
@@ -112,6 +112,19 @@ test('guardCorrectionPrompt: budget-burned EMPTY gets the targeted reasoning-fai
   const generic = guardCorrectionPrompt('write a script', 'EMPTY', '');
   assert.doesNotMatch(generic, /budget on internal reasoning/);
   assert.match(generic, /complete and closed/);
+});
+
+test('guardFinalChancePrompt: session-level ultimatum names the state and asks for ONE closing deliverable', () => {
+  const p = guardFinalChancePrompt('write a script', 'EMPTY', 'finish_reason=length with empty content (budget burned, nothing delivered)');
+  assert.match(p, /\[rsi-guard\]\[final\]/);
+  assert.match(p, /FINAL chance/);
+  assert.match(p, /write a script/);
+  assert.match(p, /LAST REJECTION: EMPTY/);
+  assert.match(p, /budget burned/);
+  assert.match(p, /Do not stay silent/);
+  // bounded: never re-injects the rejected answer body
+  assert.ok(p.length < 2000, `final-chance prompt must stay short, got ${p.length} chars`);
+  assert.doesNotMatch(p, /REJECTED ANSWER \(|spent the previous turn's budget/);
 });
 
 test('GUARD_STATES matches every non-OK state the classifier can emit', () => {
