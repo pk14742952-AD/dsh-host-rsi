@@ -540,7 +540,7 @@ export function apply(ctx, config = {}) {
       s.guardRetries += 1;
       runtime.guard.retries += 1;
       runtime.lastReason = `guard:${verdict.state}`;
-      followup(guardCorrectionPrompt(task, verdict.state, answer));
+      followup(guardCorrectionPrompt(task, verdict.state, answer, verdict.reason));
       return true;
     }
     runtime.guard.undelivered += 1;

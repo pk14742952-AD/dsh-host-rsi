@@ -43,6 +43,20 @@
 
 ## 📢 Release Notes
 
+### v0.2.4 (2026-10-12) — targeted correction for budget-burned turns + comparison wrap-up
+
+- **Targeted correction wording**: when `finish_reason=length` with empty content (reasoning
+  budget burned, nothing delivered), the follow-up now tells the model it spent the previous
+  turn's budget on internal reasoning and to write the deliverable directly — matching the
+  guard-proxy wording validated in the 3188-round report
+  ([issue#3](https://github.com/1314521gjy/ninfer-fusion-kvmem/issues/3)). Plain EMPTY keeps
+  the generic wording.
+- **Comparison wrap-up**: `scripts/compare-baseline.mjs` gained 4 guard calibration scenarios;
+  the 20-scenario 3-column run (old baseline / working tree / installed profile) is
+  line-for-line identical except the two intended calibrations vs the old baseline — no
+  impact on other plugins, profile in sync with source.
+- Test suite: **140 passing**.
+
 ### v0.2.3 (2026-10-12) — guard thresholds calibrated against real load
 
 - **EMPTY no longer misfires on short dialogue**: the default now flags only a fully empty

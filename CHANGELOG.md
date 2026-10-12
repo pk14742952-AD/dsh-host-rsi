@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-10-12
+
+### Fixed
+
+- **Targeted correction for budget-burned EMPTY** (`lib/guard.js`, `index.js`): when the guard
+  trips on `finish_reason=length` with empty content, the follow-up prompt now explicitly says
+  the previous turn spent its budget on internal reasoning and tells the model to write the
+  deliverable directly — mirroring the guard proxy wording validated in the 3188-round report
+  ([ninfer-fusion-kvmem issue#3] §2.3). Ordinary EMPTY keeps the generic wording.
+- `guardCorrectionPrompt(task, state, rejectedAnswer, reason)` gained the `reason` parameter;
+  callers pass `verdict.reason` (index.js:543). Bounded-excerpt output unchanged
+  (len=20457 for 20k input — verified in the 3-column comparison).
+- Comparison harness (`scripts/compare-baseline.mjs`) gained 4 guard calibration scenarios;
+  full 20-scenario run confirms the working tree and the installed profile are line-for-line
+  identical and the old baseline (v0.2.2) differs only on the two intended calibrations.
+- Suite: **140 passing / 0 failing**.
+
 ## [0.2.3] - 2026-10-12
 
 ### Fixed

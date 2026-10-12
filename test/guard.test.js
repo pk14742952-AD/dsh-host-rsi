@@ -104,6 +104,16 @@ test('guardCorrectionPrompt truncates an oversized rejected answer', () => {
   assert.match(p, /\(excerpt\)/);
 });
 
+test('guardCorrectionPrompt: budget-burned EMPTY gets the targeted reasoning-failure wording', () => {
+  const p = guardCorrectionPrompt('write a script', 'EMPTY', '', 'finish_reason=length with empty content (budget burned, nothing delivered)');
+  assert.match(p, /spent the previous turn's budget on internal reasoning/);
+  assert.match(p, /output the deliverable directly/);
+  // ordinary EMPTY without the burn reason keeps the generic wording
+  const generic = guardCorrectionPrompt('write a script', 'EMPTY', '');
+  assert.doesNotMatch(generic, /budget on internal reasoning/);
+  assert.match(generic, /complete and closed/);
+});
+
 test('GUARD_STATES matches every non-OK state the classifier can emit', () => {
   assert.deepEqual(GUARD_STATES, ['EMPTY', 'TRUNCATED', 'FIXED_POINT', 'SAME_PLAN', 'SHELL_LOOP']);
 });

@@ -179,6 +179,22 @@ const scenarios = [
     },
   },
   {
+    name: 'guard: default EMPTY threshold=0 (short chat "好的" must be OK)',
+    run: (a) => a.guard.classifyLoop({ answerText: '好的' }).state,
+  },
+  {
+    name: 'guard: explicit thresholdEmpty=400 still gates short prose (deliverable profile)',
+    run: (a) => a.guard.classifyLoop({ answerText: '好的', thresholdEmpty: 400 }).state,
+  },
+  {
+    name: 'guard: finish_reason=length with EMPTY content -> state?',
+    run: (a) => a.guard.classifyLoop({ answerText: '', finishReason: 'length' }).state,
+  },
+  {
+    name: 'guard: finish_reason=length with 500 chars -> state?',
+    run: (a) => a.guard.classifyLoop({ answerText: 'x'.repeat(500), finishReason: 'length' }).state,
+  },
+  {
     name: 'guard: 20k-char rejected answer excerpt is bounded',
     run: (a) => {
       if (!a.guard.guardCorrectionPrompt) return 'no export (old baseline)';
