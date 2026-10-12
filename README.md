@@ -5,6 +5,38 @@
 
 # DSH HOST RSI记忆
 
+## 关于本插件 / About this plugin（双语简介 / Bilingual intro）
+
+> **中文**：这是一个给 DSH（DeepSeek Harness）用的**宿主侧记忆 / 自进化插件**。
+> 它安静地观察每次会话——模型自检结论、工具成败、用户纠正与长期偏好，
+> 把高价值经验沉淀为「可信教训」，下次遇到相似任务自动注入上下文，**越用越强**。
+> 同时内置**编码循环收敛**与**五态交付护栏**：当本地大模型陷入死循环、反复验证已通过的检查、
+> 空交付、只给计划不给结果时，自动注入收敛提示或催生成完整闭合的交付物，把时间省回真正的工作。
+> 通用模式：无需为特定任务编写评分器，兼容 API 与本地模型。
+>
+> **English**: This is a **host-side memory / self-evolution plugin** for DSH (DeepSeek Harness).
+> It quietly watches every session — the model's self-check verdicts, tool outcomes, user
+> corrections, and long-term preferences — distills high-value experience into **trusted lessons**,
+> and automatically injects them when a similar task appears next time: **it gets better the more
+> you use it**. It also ships a **convergence steerer** and a **five-state delivery guard**: when a
+> local LLM falls into a death loop, re-verifies already-passing checks, delivers empty output, or
+> only repeats plans without progress, the plugin injects a convergence hint or pushes for a complete,
+> closed deliverable — so time goes back into real work. Model-agnostic; no task-specific scorer needed.
+
+## 更新公告 / Release Notes
+
+### v0.2.2（2026-10-11）— 让插件真正发挥作用
+
+- **修复系统自污染**：系统横幅 / `<goal_round>` / skill-catalog 等不再被误记为「用户纠正」注入无关任务。
+- **用户 REFUTED 现在被信任**：用户指出"你错了"是最强纠正信号，按 L3 可信注入（之前被隔离）。
+- **SHELL_LOOP 误判修复**：三条不同命令不再被误判为死循环（按 `name:command` 身份比较）。
+- **收敛判定修复**：`3 passed; 0 failed` 不再误判为失败；`BUILD FAILED` 不再误判为通过。
+- **存储原子写 + 损坏自愈**：`index.json` 崩溃不再全丢、损坏后自动备份重建，不再永久降级。
+- **检索注入净化**：任务回声过滤、中文 token 估算修正、L1 之外真正注入 `fix`。
+- 对照测试见 [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md)，测试套件 138 项全通过。
+
+> 完整历史见 [CHANGELOG.md](./CHANGELOG.md) · 本版本 GitHub Release：<https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2>
+
 **给 DSH 做的通用宿主插件，默认面向本地大模型调参；当前重点覆盖 Qwen3.8-27B 与 Qwen3.8 Flash 等本地 27B/轻量模型，也兼容 API 模型。**
 插件不做模型权重修改，只做**每次使用持续自进化**的宿主侧记忆层，以 DSH **宿主插件**形式实现。
 每次使用：模型先"反问式"自检（counter-reason）自己的答案；**可信**教训被保存并在下次注入；

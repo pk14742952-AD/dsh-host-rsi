@@ -5,6 +5,42 @@
 
 # DSH HOST RSI Memory
 
+## About this plugin / 关于本插件 (bilingual intro)
+
+- **English**: A **host-side memory / self-evolution plugin** for DSH (DeepSeek Harness).
+  It quietly watches every session — the model's self-check verdicts, tool outcomes, user
+  corrections, and long-term preferences — distills high-value experience into **trusted lessons**,
+  and automatically injects them when a similar task appears next time: **it gets better the more
+  you use it**. It also ships a **convergence steerer** and a **five-state delivery guard**: when a
+  local LLM falls into a death loop, re-verifies already-passing checks, delivers empty output, or
+  only repeats plans without progress, the plugin injects a convergence hint or pushes for a complete,
+  closed deliverable. Model-agnostic; no task-specific scorer needed.
+- **中文**: 给 DSH 用的**宿主侧记忆 / 自进化插件**。观察每次会话——模型自检结论、工具成败、
+  用户纠正与长期偏好——沉淀为「可信教训」并在相似任务时自动注入，**越用越强**。内置
+  **收敛导引**与**五态交付护栏**：检测到死循环、反复验证、空交付、只重复计划时，自动注入
+  收敛提示或催生成完整交付物。无需任务专用评分器。
+
+## Release Notes / 更新公告
+
+### v0.2.2 (2026-10-11) — making the plugin actually work
+
+- **Self-pollution fixed**: system banners / `<goal_round>` / skill-catalog blocks are no longer
+  captured as "user corrections" and injected into unrelated tasks.
+- **User REFUTED is now trusted**: "you are wrong" is the strongest corrective signal — stored as
+  trusted L3 and injected (it used to be quarantined).
+- **SHELL_LOOP false positive fixed**: three distinct commands no longer look like a death loop
+  (identity is compared by `name:command`).
+- **Convergence detection fixed**: `3 passed; 0 failed` is no longer judged as failed; `BUILD FAILED`
+  no longer slips through as passed.
+- **Atomic store writes + self-heal**: `index.json` can no longer be lost on crash; a corrupt file is
+  quarantined and rebuilt instead of disabling the store forever.
+- **Retrieval noise filtering**: task-echo lessons dropped, CJK token cost corrected, `fix` actually
+  injected beyond L1.
+- Before/after comparison: [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md); test suite: 138 passing.
+
+> Full history in [CHANGELOG.md](./CHANGELOG.md) · GitHub Release for this version:
+> <https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2>
+
 **A model-agnostic DSH host plugin, tuned by default for local LLMs: primarily Qwen3.8-27B and lightweight local models such as Qwen3.8 Flash, while also working with API models.**
 It is a DSH **host plugin** that adds a host-side **continual self-improvement memory layer on every use**.
 Each run starts with a counter-reasoning self-check: the model interrogates its own answer before committing.
