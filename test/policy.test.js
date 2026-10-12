@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate, isUserCorrection, isUserInstruction, isDurableUserInstruction, projectFromText } from '../lib/policy.js';
+import { isNonTrivial, shouldCapture, shouldEscalate, criticBudgetOk, isDuplicate, isUserCorrection, isUserInstruction, isDurableUserInstruction, projectFromText, isSystemLikeText, outcomeSignal } from '../lib/policy.js';
 
 const cfg = {
   capture: { enabled: true, maxPerSession: 20, minChars: 200, dedupeThreshold: 0.8 },
@@ -61,7 +61,7 @@ test('isDuplicate threshold', () => {
 
 test('user correction detection: explicit corrections and long instructions are captured', () => {
   assert.equal(isUserCorrection({ correctionText: '不对，应该用 B 方案' }), true);
-  assert.equal(isUserCorrection({ correctionText: 'please use the other approach next time' }), true);
+  assert.equal(isUserCorrection({ correctionText: 'please use the other approach next time as i said to do' }), true);
   assert.equal(isUserCorrection({ correctionText: '不要再使用这个模型输出格式' }), true);
   assert.equal(isUserCorrection({ correctionText: 'ok' }), false);
   assert.equal(isUserCorrection({ correctionText: '谢谢' }), false);
@@ -88,4 +88,24 @@ test('projectFromText extracts a stable project key from absolute paths', () => 
   assert.equal(projectFromText('optimize E:\\DSH\\dsh-host-rsi\\index.js import'), 'dsh-host-rsi');
   assert.equal(projectFromText('fix /home/me/myproject readme'), 'myproject');
   assert.equal(projectFromText('a plain instruction without a path'), null);
+});
+
+test('system-like gate: host/plugin injected boilerplate is never a user lesson', () => {
+  // Real pollution rows observed in the legacy store (all captured as trusted L3).
+  assert.equal(isSystemLikeText('<goal_round> Objective: "继续未完成的工作，提速" Round: 1/256 Continue working toward the objective in this same session'), true);
+  assert.equal(isSystemLikeText('Current runtime context. This snapshot supersedes earlier runtime-context snapshots. Current DSH file policy: danger-full-access.'), true);
+  assert.equal(isSystemLikeText('<system-reminder> The available skill catalog changed. This complete catalog replaces every earlier available-skills list in this session:'), true);
+  assert.equal(isSystemLikeText('以后都用 httpx，不要用 requests'), false);
+});
+
+test('user correction: neutral filler 20-39 chars is not a correction (length bar raised)', () => {
+  // Old rule: c.length >= 20 -> correction. This 22-char neutral sentence was captured
+  // as a trusted correction in the real store; it is not a correction of a prior answer.
+  assert.equal(isUserCorrection({ correctionText: '这是一个比较长的中性描述句子不算修正内容哦' }), false);
+});
+
+test('outcomeSignal tolerates missing toolResults', () => {
+  const s = outcomeSignal({ taskText: 'x', answerText: 'ok' });
+  assert.equal(s.hadFailure, false);
+  assert.equal(s.ranTools, false);
 });

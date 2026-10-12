@@ -13,6 +13,8 @@ import {
   normalizeModels,
   isModelActive,
   observeShell,
+  looksPassed,
+  classifyCheck,
 } from '../lib/convergence.js';
 
 test('state: create/reset are idempotent and isolate counters', () => {
@@ -96,6 +98,33 @@ test('observeShell: edit/write resets the convergence state', () => {
   observeShell(s, commandOf(args), text, 3);
   resetState(s); // host calls this on tools/pre-execute for edit/write
   assert.equal(observeShell(s, commandOf(args), text, 3), null, 'counter restarts after a source edit');
+});
+
+test('looksPassed: "N passed; 0 failed" reports are PASSING, not failing', () => {
+  // Old rule: t.includes("failed") -> not passed, so "3 passed; 0 failed" counted as
+  // a failure and the convergence steer never fired on the plugin's own happy path.
+  assert.equal(looksPassed('3 passed; 0 failed; 0 ignored', 'test'), true);
+  assert.equal(looksPassed('121 pass / 0 fail', 'test'), true);
+  assert.equal(looksPassed('Tests: 2 failed, 8 passed', 'test'), false);
+  assert.equal(looksPassed('1 failed', 'test'), false);
+  assert.equal(looksPassed('Compiled successfully', 'build'), true);
+  assert.equal(looksPassed('BUILD FAILED in 2.1s', 'build'), false);
+  assert.equal(looksPassed('returned 200 items', 'runtime'), true);
+});
+
+test('classifyCheck: known command shapes map to the right family', () => {
+  assert.equal(classifyCheck('python -m pytest tests/test_a.py -q').family, 'test');
+  assert.equal(classifyCheck('npm run build').family, 'build');
+  assert.equal(classifyCheck('npm test').family, 'test');
+  assert.equal(classifyCheck('ls -la'), null);
+});
+
+test('observeShell: a zero-failure test report participates in convergence', () => {
+  const s = createState();
+  const cmd = 'node --test test/*.test.js';
+  assert.equal(observeShell(s, cmd, '3 passed; 0 failed', 3), null);
+  assert.equal(observeShell(s, cmd, '3 passed; 0 failed', 3), null);
+  assert.equal(observeShell(s, cmd, '3 passed; 0 failed', 3), SOFT_STEER);
 });
 
 test('POLICY_TEXT exists and is a stable completion policy', () => {

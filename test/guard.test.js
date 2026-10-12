@@ -66,6 +66,14 @@ test('guardCorrectionPrompt identifies state + task for the followup round', () 
   assert.match(p, /complete and closed/);
 });
 
+test('guardCorrectionPrompt truncates an oversized rejected answer', () => {
+  const p = guardCorrectionPrompt('t', 'TRUNCATED', 'x'.repeat(20000));
+  assert.ok(p.length < 12000, `prompt must stay bounded, got ${p.length} chars`);
+  assert.match(p, /truncated, remaining 14000 chars/);
+  assert.match(p, /x{800}$/, 'tail of the rejected answer is kept');
+  assert.match(p, /\(excerpt\)/);
+});
+
 test('GUARD_STATES matches every non-OK state the classifier can emit', () => {
   assert.deepEqual(GUARD_STATES, ['EMPTY', 'TRUNCATED', 'FIXED_POINT', 'SAME_PLAN', 'SHELL_LOOP']);
 });

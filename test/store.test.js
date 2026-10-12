@@ -92,6 +92,42 @@ test('hasDuplicate: different projects are NOT duplicates even for similar text'
   }, 0.85), false, 'different project should not collide');
 });
 
+test('hasDuplicate: cross-domain duplicates (correction vs instruction of the same text) are rejected', () => {
+  // Real observed failure: the same user text was captured as BOTH a trusted correction
+  // (domain user-correction) and a trusted instruction (domain user-instruction), and the
+  // old domain-equality early-continue let the second copy through.
+  const { store } = tmpStore();
+  store.addLesson({
+    domain: 'user-instruction',
+    tags: ['user-instruction', 'L3'],
+    summary: 'User instruction: 创建一个完整独立HTML文件，禁止使用子代理',
+    fix: '创建一个完整独立HTML文件，禁止使用子代理',
+    layer: 'L3',
+    trusted: true,
+  });
+  assert.equal(store.hasDuplicate({
+    domain: 'user-correction',
+    tags: ['user-correction', 'L3'],
+    summary: 'User correction: 创建一个完整独立HTML文件，禁止使用子代理',
+    fix: '创建一个完整独立HTML文件，禁止使用子代理',
+  }, 0.85), true, 'identical text across capture domains should be a duplicate');
+});
+
+test('ensureLayout self-heals a corrupt index.json instead of disabling forever', () => {
+  const { store, dir } = tmpStore({ flushMs: 100000 });
+  // Corrupt the index after layout creation (simulating a crash mid-write: truncated JSON).
+  fs.writeFileSync(path.join(dir, 'index.json'), '{"rows": [{"id":"x","summ', 'utf8');
+  const s2 = openStore(dir, { flushMs: 100000 });
+  s2.ensureLayout();
+  assert.equal(s2.disabled, false, 'corrupt index must be quarantined and rebuilt, not disabled');
+  const l = s2.addLesson({ domain: 'python', tags: ['ok'], summary: 'survives corruption', trusted: true });
+  assert.equal(s2.flushSync(), true);
+  const idx = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
+  assert.equal(idx.length, 1, 'index rebuilt and persisted after corruption');
+  assert.equal(idx[0].id, l.id);
+  s2.close();
+});
+
 test('promote flips quarantined -> trusted and logs it', () => {
   const { store, dir } = tmpStore();
   const q = store.addLesson({ domain: 'js', tags: ['promises'], summary: 'maybe await', layer: 'Q', trusted: false });

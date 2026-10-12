@@ -35,6 +35,32 @@ test('estimateTokens is a rough length/4', () => {
   assert.equal(estimateTokens(''), 0);
 });
 
+test('estimateTokens: CJK text is token-heavier than raw character count/4', () => {
+  // 16 CJK chars ≈ ceil(16/1.5)=11 tokens (old flat len/4 gave 4); latin still ~1/4.
+  assert.equal(estimateTokens('中文内容测试一二三四五六七八九十'), 11);
+  assert.equal(estimateTokens('hello world'), 3);
+});
+
+test('retrieve injects fix for non-L1 lessons when the fix is not redundant', () => {
+  const rows = [
+    { id: 'l2fix', tags: ['python'], summary: 'NInfer 的 kv-dtype k8v4 会导致 2-token 静默崩溃', fix: '始终加 -ctk r8kv4 -ctv r8kv4', layer: 'L2', trusted: true, updatedAt: 2 },
+  ];
+  const out = retrieve(rows, 'k8v4 崩溃', { topK: 5 });
+  assert.ok(out && out.includes('NInfer'), 'lesson body still injected');
+  assert.ok(out.includes('始终加 -ctk'), 'non-L1 fix is now included (was dropped before)');
+});
+
+test('retrieve: a lesson that merely echoes the task is filtered out', () => {
+  const task = '检查完本地的dsh host rsi 项目，1 看看有没有需要优化的 2 用户反应安装以后在e盘生成文件夹，能否跟其它插件一样';
+  const rows = [
+    { id: 'echo', tags: ['rsi'], summary: `User correction: ${task}`, layer: 'L3', trusted: true, updatedAt: 2, project: 'dsh-host-rsi' },
+    { id: 'real', tags: ['rsi'], summary: 'User instruction: 迁移逻辑只读不创建旧目录，重启桌面端自动搬走', layer: 'L3', trusted: true, updatedAt: 3, project: 'dsh-host-rsi' },
+  ];
+  const out = retrieve(rows, task, { topK: 5 });
+  assert.ok(out && out.includes('迁移逻辑'), 'real lesson still injected');
+  assert.doesNotMatch(out, /检查完本地的dsh/, 'task echo must not be re-injected');
+});
+
 test('CJK: space-free Chinese query matches a space-separated Chinese lesson', () => {
   const zh = [
     { id: 'z1', tags: ['python'], summary: '写一个 Python 下载脚本时用 httpx 不要用 requests', layer: 'L2', trusted: true, updatedAt: 1 },
