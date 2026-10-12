@@ -1,26 +1,47 @@
 > English (default) · [中文](./README.md)
 
-> **Welcome & feedback**: if you find a bug or have an idea, open an Issue or submit a PR and
-> I will fix/merge periodically. If you find this useful, please leave a ⭐ Star — thank you!
+<div align="center">
 
-# DSH HOST RSI Memory
+# 🧠 DSH HOST RSI Memory
 
-## About this plugin / 关于本插件 (bilingual intro)
+**A host-side plugin that makes local LLMs "get better with use" — no more death loops**
 
-- **English**: A **host-side memory / self-evolution plugin** for DSH (DeepSeek Harness).
-  It quietly watches every session — the model's self-check verdicts, tool outcomes, user
-  corrections, and long-term preferences — distills high-value experience into **trusted lessons**,
-  and automatically injects them when a similar task appears next time: **it gets better the more
-  you use it**. It also ships a **convergence steerer** and a **five-state delivery guard**: when a
-  local LLM falls into a death loop, re-verifies already-passing checks, delivers empty output, or
-  only repeats plans without progress, the plugin injects a convergence hint or pushes for a complete,
-  closed deliverable. Model-agnostic; no task-specific scorer needed.
-- **中文**: 给 DSH 用的**宿主侧记忆 / 自进化插件**。观察每次会话——模型自检结论、工具成败、
-  用户纠正与长期偏好——沉淀为「可信教训」并在相似任务时自动注入，**越用越强**。内置
-  **收敛导引**与**五态交付护栏**：检测到死循环、反复验证、空交付、只重复计划时，自动注入
-  收敛提示或催生成完整交付物。无需任务专用评分器。
+[![Version](https://img.shields.io/badge/version-v0.2.2-2F81F7)](https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2)
+[![Tests](https://img.shields.io/badge/tests-138%20passing-2E7D32)](https://github.com/pk14742952-AD/dsh-host-rsi)
+[![License](https://img.shields.io/badge/license-MIT-7B1FA2)](./LICENSE)
 
-## Release Notes / 更新公告
+</div>
+
+> **What is it?** A **host-side memory / self-evolution plugin** for DSH (DeepSeek Harness).
+> It quietly watches every session — the model's self-check verdicts, tool outcomes, user
+> corrections, and long-term preferences — distills high-value experience into **trusted lessons**,
+> and automatically injects them when a similar task appears next time: **it gets better the more
+> you use it**.
+
+## 🎯 What problems does it solve?
+
+| Pain point 😵 | How the plugin helps ✨ |
+|---|---|
+| **Death loops / stuck / thunder-thinking**: re-running already-passing checks, empty delivery, plan-only replies | Built-in **coding-loop convergence steerer** + **five-state delivery guard** inject a convergence hint and push for a complete, closed deliverable |
+| **Goldfish memory**: repeating the same mistakes | High-value experience is distilled into trusted lessons and recalled on similar tasks |
+| **Tuning pain**: local models behave very differently | Model-agnostic; no task-specific scorer required; works with API and local models |
+| **Memory pollution**: system banners and task echoes leak into memory | Source gate + retrieval sanitization keep only genuine trusted corrections |
+
+## ✨ Key features
+
+- 🧠 **Self-evolution**: L1 verifiable checks / L2 self-interrogation / L3 user final tap — a reliability-weighted 3-level signal ladder
+- 🔁 **Convergence steerer**: detects death loops and injects a hint so time goes back into real work
+- 🛡️ **Five-state delivery guard**: catches EMPTY / TRUNCATED / FIXED_POINT / SAME_PLAN / SHELL_LOOP
+- 💾 **Persistent memory**: in-memory reads + debounced background writes; crash-safe and self-healing
+- 🔌 **Zero intrusion**: pure host plugin, no model-weight changes, minimal resource footprint
+
+## 🚀 Quick start
+
+1. **One-click install**: DSH → Settings → Plugins → install `dsh-host-rsi`
+2. **Watch it work**: restart DSH → Settings → Plugins → **DSH HOST RSI Memory → Open dashboard** to see captures / injections / blocks live
+3. **Try standalone** (no DSH needed): `node demo-serve.mjs` → open <http://127.0.0.1:8788>
+
+## 📢 Release Notes
 
 ### v0.2.2 (2026-10-11) — making the plugin actually work
 
@@ -38,31 +59,16 @@
   injected beyond L1.
 - Before/after comparison: [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md); test suite: 138 passing.
 
-> Full history in [CHANGELOG.md](./CHANGELOG.md) · GitHub Release for this version:
+> Older releases in [CHANGELOG.md](./CHANGELOG.md) · GitHub Release for this version:
 > <https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2>
 
-**A model-agnostic DSH host plugin, tuned by default for local LLMs: primarily Qwen3.8-27B and lightweight local models such as Qwen3.8 Flash, while also working with API models.**
-It is a DSH **host plugin** that adds a host-side **continual self-improvement memory layer on every use**.
-Each run starts with a counter-reasoning self-check: the model interrogates its own answer before committing.
-**Trusted lessons are saved and injected into the next run.** If the cheap method does not resolve the issue,
-deeper critic rounds **automatically escalate**. No task-specific scorer is required for the general pattern.
+## 📚 Further reading
 
-> **Problem it solves**: local LLMs (especially 27B models such as Qwen3.8-27B) can get stuck in
-> death loops during long tasks — re-running an already-passing test/build/API check, empty delivery,
-> plan-only replies with no progress, pure tool loops without a final answer, or truncated output.
-> This plugin ships a **coding-loop convergence steerer** and a **five-state delivery guard** that
-> inject a convergence hint or schedule an immediate, complete, closed deliverable when one of those
-> states is detected.
+- [PRINCIPLES.md](./PRINCIPLES.md) — technical principles: signal ladder / reflection loop / triggers & efficiency / indexing / reproduction checklist (with source line references)
+- [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md) — before/after comparison tests
+- [CHANGELOG.md](./CHANGELOG.md) — full changelog
 
-Repository: <https://github.com/pk14742952-AD/dsh-host-rsi>
-
-> **Plugin summary**: a DSH memory / self-evolution plugin. It gathers
-> successes, failures, user corrections, and long-term preferences in the background,
-> turns high-value experience into trusted lessons, and injects them automatically the
-> next time a similar task appears. Changelog: [CHANGELOG.md](./CHANGELOG.md).
-
-> **Want the technical principles or a local reproduction?** Read [PRINCIPLES.md](./PRINCIPLES.md)
-> (dedicated docs: signal ladder / reflection loop / triggers and efficiency / indexing / AREX-2 mapping / reproduction checklist, with source line references).
+> Found a bug or have an idea? Open an Issue or PR. If you find this useful, leave a ⭐ Star — thank you!
 
 ## Principle Source (Acknowledgments)
 

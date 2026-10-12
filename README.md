@@ -1,29 +1,45 @@
 > 中文（默认） · [English](./README.en.md)
 
-> **欢迎使用与回馈**：如果发现 bug 或有改进想法，欢迎提交 Issue / PR，我会不定期修正与合并；
-> 如果觉得好用，希望能点一个 ⭐ Star，谢谢支持！
+<div align="center">
 
-# DSH HOST RSI记忆
+# 🧠 DSH HOST RSI 记忆
 
-## 关于本插件 / About this plugin（双语简介 / Bilingual intro）
+**让本地大模型「越用越强、不再死循环」的宿主插件**
 
-> **中文**：这是一个给 DSH（DeepSeek Harness）用的**宿主侧记忆 / 自进化插件**。
-> 它安静地观察每次会话——模型自检结论、工具成败、用户纠正与长期偏好，
-> 把高价值经验沉淀为「可信教训」，下次遇到相似任务自动注入上下文，**越用越强**。
-> 同时内置**编码循环收敛**与**五态交付护栏**：当本地大模型陷入死循环、反复验证已通过的检查、
-> 空交付、只给计划不给结果时，自动注入收敛提示或催生成完整闭合的交付物，把时间省回真正的工作。
-> 通用模式：无需为特定任务编写评分器，兼容 API 与本地模型。
->
-> **English**: This is a **host-side memory / self-evolution plugin** for DSH (DeepSeek Harness).
-> It quietly watches every session — the model's self-check verdicts, tool outcomes, user
-> corrections, and long-term preferences — distills high-value experience into **trusted lessons**,
-> and automatically injects them when a similar task appears next time: **it gets better the more
-> you use it**. It also ships a **convergence steerer** and a **five-state delivery guard**: when a
-> local LLM falls into a death loop, re-verifies already-passing checks, delivers empty output, or
-> only repeats plans without progress, the plugin injects a convergence hint or pushes for a complete,
-> closed deliverable — so time goes back into real work. Model-agnostic; no task-specific scorer needed.
+[![Version](https://img.shields.io/badge/version-v0.2.2-2F81F7)](https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2)
+[![Tests](https://img.shields.io/badge/tests-138%20passing-2E7D32)](https://github.com/pk14742952-AD/dsh-host-rsi)
+[![License](https://img.shields.io/badge/license-MIT-7B1FA2)](./LICENSE)
 
-## 更新公告 / Release Notes
+</div>
+
+> **它是什么？** 一个给 DSH（DeepSeek Harness）用的**宿主侧记忆 / 自进化插件**：
+> 安静地观察每次会话——模型自检结论、工具成败、用户纠正与长期偏好——
+> 把高价值经验沉淀为「**可信教训**」，下次遇到相似任务**自动注入**，让本地大模型**越用越强**。
+
+## 🎯 它解决什么问题？
+
+| 痛点 😵 | 插件怎么治 ✨ |
+|---|---|
+| **死循环 / 卡住 / 雷霆大思考**：已通过的测试反复验证、空交付、只给计划不给结果 | 内置**编码循环收敛** + **五态交付护栏**，检测到就注入收敛提示、催出完整闭合的交付物 |
+| **金鱼记忆**：同样的错误反复犯 | 高价值经验沉淀为可信教训，下次相似任务自动想起 |
+| **调参困难**：不同本地模型表现差异大 | 通用模式，无需为特定任务写评分器，兼容 API 与本地模型 |
+| **记忆污染**：系统提示、任务回声混进记忆 | 来源闸门 + 检索净化，只留真正可信的用户纠正 |
+
+## ✨ 核心特性
+
+- 🧠 **自进化**：L1 可验证检查 / L2 自反问 / L3 用户末拍，三级信号阶梯可靠性加权
+- 🔁 **收敛导引**：检测到死循环自动注入收敛提示，把时间省回真正的工作
+- 🛡️ **五态交付护栏**：EMPTY / TRUNCATED / FIXED_POINT / SAME_PLAN / SHELL_LOOP 全拦截
+- 💾 **持久记忆**：内存缓存读 + 后台防抖写，崩溃自愈、不丢数据
+- 🔌 **零侵入**：纯宿主插件，不碰模型权重，最小资源占用
+
+## 🚀 快速开始
+
+1. **一键安装**：DSH「设置 → 插件」安装 `dsh-host-rsi`
+2. **看效果**：重启 DSH →「设置 → 插件 → DSH HOST RSI记忆 → 打开仪表板」，实时查看捕获 / 注入 / 拦截
+3. **独立体验**（无需 DSH）：`node demo-serve.mjs` → 打开 <http://127.0.0.1:8788>
+
+## 📢 更新公告
 
 ### v0.2.2（2026-10-11）— 让插件真正发挥作用
 
@@ -35,26 +51,15 @@
 - **检索注入净化**：任务回声过滤、中文 token 估算修正、L1 之外真正注入 `fix`。
 - 对照测试见 [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md)，测试套件 138 项全通过。
 
-> 完整历史见 [CHANGELOG.md](./CHANGELOG.md) · 本版本 GitHub Release：<https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2>
+> 更早版本见 [CHANGELOG.md](./CHANGELOG.md) · 本版本 GitHub Release：<https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2>
 
-**给 DSH 做的通用宿主插件，默认面向本地大模型调参；当前重点覆盖 Qwen3.8-27B 与 Qwen3.8 Flash 等本地 27B/轻量模型，也兼容 API 模型。**
-插件不做模型权重修改，只做**每次使用持续自进化**的宿主侧记忆层，以 DSH **宿主插件**形式实现。
-每次使用：模型先"反问式"自检（counter-reason）自己的答案；**可信**教训被保存并在下次注入；
-便宜方法没解决时，深度批评轮**自动**升级。通用模式：无需针对特定任务的评分器。
+## 📚 深入阅读
 
-> **重点解决的问题**：针对本地大模型（尤其是 Qwen3.8-27B 这类 27B 模型）在长任务中容易出现的
-> **死循环、卡住、雷霆大思考**——例如同一测试/构建/API 检查已经通过仍反复验证、空交付、只给计划
-> 没有进展、只调工具不给正文、输出被截断。插件内置**编码循环收敛**与**五态交付护栏**，检测到后会
-> 直接注入收敛提示，或自动让模型立即输出完整闭合的交付物，避免把时间耗进重复验证和无进展输出。
+- [PRINCIPLES.md](./PRINCIPLES.md) — 技术原理：信号阶梯 / 反思循环 / 触发与效率 / 索引机制 / 复刻清单（逐点标注源码行号）
+- [COMPARISON-0.2.2.md](./COMPARISON-0.2.2.md) — 修复前后对照测试
+- [CHANGELOG.md](./CHANGELOG.md) — 完整更新日志
 
-仓库地址：<https://github.com/pk14742952-AD/dsh-host-rsi>
-
-> **插件简介**：这是一个给 DSH 用的通用记忆 / 自进化插件。它在后台采集每次使用的
-> 成功、失败、用户纠正与长期偏好，把高价值经验沉淀为可信教训，并在下次遇到相似任务时自动注入。
-> 更新日志见 [CHANGELOG.md](./CHANGELOG.md)。
-
-> **想理解技术原理、或在自己环境复刻？** 读 [PRINCIPLES.md](./PRINCIPLES.md)
-> （专用文档：信号阶梯 / 反思循环 / 触发与效率 / 索引机制 / 与 AREX-2 的对应 / 复刻清单，逐点标注源码行号）。
+> 如果发现 bug 或有改进想法，欢迎提交 Issue / PR；觉得好用就点个 ⭐ Star，谢谢支持！
 
 ## 原理来源（致谢 / Principle Source）
 
