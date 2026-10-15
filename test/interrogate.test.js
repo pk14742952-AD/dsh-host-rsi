@@ -9,6 +9,12 @@ test('instruction mentions counter-reason + the [VERIFY] tag + lesson field', ()
   assert.match(s, /lesson=/);
 });
 
+test('instruction exempts structured output from the [VERIFY] tag', () => {
+  const s = buildSelfCheckInstruction();
+  assert.match(s, /structured format/);
+  assert.match(s, /do NOT append/i);
+});
+
 test('parses a full CONFIRMED tag with lesson + conf', () => {
   const t = parseVerifyTag('answer…\n[VERIFY: CONFIRMED; conf=0.8; lesson=always check edge case; reason=re-derived]');
   assert.equal(t.verdict, 'CONFIRMED');

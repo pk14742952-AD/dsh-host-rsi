@@ -849,7 +849,7 @@ export function apply(ctx, config = {}) {
           runtime.captures += 1;
           runtime.lastCapture = task;
 
-          const esc = shouldEscalate({ scorer: r.scorer, verdict: r.tag?.verdict, conf: r.tag?.conf, tag: r.tag, threshold: cfg.escalate.threshold });
+          const esc = shouldEscalate({ scorer: r.scorer, verdict: r.tag?.verdict, conf: r.tag?.conf, tag: r.tag, threshold: cfg.escalate.threshold, answerText: answer });
           if (esc.do && hasFollowup && criticBudgetOk({ cfg, session: s })) {
             const n = cfg.escalate.selfConsistency ?? 1;
             for (let i = 0; i < n && s.critics < (cfg.escalate.maxCriticsPerSession ?? 4); i += 1) {

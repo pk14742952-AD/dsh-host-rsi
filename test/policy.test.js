@@ -40,6 +40,14 @@ test('escalate: REFUTED / UNCERTAIN / no-tag -> auto critic', () => {
   assert.equal(shouldEscalate({ verdict: undefined, tag: null }).do, true);
 });
 
+test('escalate: structured output without tag -> no auto critic', () => {
+  assert.equal(shouldEscalate({ verdict: undefined, tag: null, answerText: '{"key":"value"}' }).do, false);
+  assert.equal(shouldEscalate({ verdict: undefined, tag: null, answerText: '[1,2,3]' }).do, false);
+  assert.equal(shouldEscalate({ verdict: undefined, tag: null, answerText: '<root>data</root>' }).do, false);
+  // plain text without tag still escalates
+  assert.equal(shouldEscalate({ verdict: undefined, tag: null, answerText: 'just a normal answer' }).do, true);
+});
+
 test('escalate: confident CONFIRMED -> no critic; low conf -> critic', () => {
   assert.equal(shouldEscalate({ verdict: 'CONFIRMED', conf: 0.9, tag: {}, threshold: 0.6 }).do, false);
   assert.equal(shouldEscalate({ verdict: 'CONFIRMED', conf: 0.4, tag: {}, threshold: 0.6 }).do, true);

@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9] - 2026-10-15
+
+### Fixed
+
+- **[VERIFY:] trailer no longer breaks structured output** (issue #3, point 5):
+  `buildSelfCheckInstruction()` now tells the model to omit the `[VERIFY:]` tag when its output
+  must conform to a structured format (JSON, XML, schema-constrained tool output). The
+  counter-reasoning itself (re-derive, find counterexample, check assumptions) is still performed;
+  only the trailing tag is skipped. Previously this caused 18/100 structured-output non-compliance
+  vs 2/100 without the plugin (Fisher p=0.0002, measured by @Neuche in issue #4).
+
+- **`shouldEscalate()` no longer auto-triggers critic round for structured output** (`lib/policy.js`):
+  when no `[VERIFY:]` tag is found but the answer starts with `{`, `[`, or `<` (structured output),
+  the escalation gate returns `{ do: false }` instead of firing an unnecessary critic round. The
+  existing `inject.selfCheck=false` global switch remains available but is no longer needed for
+  structured-output scenarios.
+
 ## [0.2.8] - 2026-10-15
 
 ### Fixed
