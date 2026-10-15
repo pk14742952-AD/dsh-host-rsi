@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-10-15
+
+### Fixed
+
+- **CRITICAL: plugin never loaded — missing `main` field in package.json** (`package.json`):
+  every working DSH host plugin declares a non-empty `main` field (e.g. `"main": "index.js"`)
+  so the host kernel can locate the entry point. dsh-host-rsi had `"main": ""` (empty string,
+  effectively absent), so the host silently skipped the bundle patch — the plugin was installed
+  in node_modules but never loaded, never registered its event handlers, never opened its
+  dashboard port, and never captured or injected anything. The GUI showed the version but the
+  runtime was dead. Fix: set `"main": "index.js"`. This is the single most impactful fix in
+  the project's history: without it, no other feature can ever fire.
+
 ## [0.2.6] - 2026-10-12
 
 ### Added

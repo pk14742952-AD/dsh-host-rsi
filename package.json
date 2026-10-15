@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -34,6 +34,7 @@
     "test:e2e": "node test/e2e-model-injection.mjs"
   },
   "icon": "./icon.svg",
+  "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
