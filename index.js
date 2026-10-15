@@ -80,14 +80,29 @@ function safeGet(obj, ...props) {
 // Resolution order: DSH_HOME env (same var DSH's host.js reads) -> os.homedir().
 function defaultDir() {
   const home = (process.env.DSH_HOME && process.env.DSH_HOME.trim()) || os.homedir();
-  return path.join(home, '.dsh', 'rsi-memory');
+  // DSH_HOME is typically "C:\Users\X\.dsh" — appending ".dsh" again creates a
+  // double-.dsh path ("...\.dsh\.dsh\rsi-memory"). If home already ends with ".dsh",
+  // treat it as the DSH root and place rsi-memory directly inside it.
+  const base = home.replace(/[\\/]\.dsh$/i, '') === home ? path.join(home, '.dsh') : home;
+  return path.join(base, 'rsi-memory');
 }
 // One-time migration from the pre-0.1.12 hardcoded default. If the legacy dir has data
 // and the new default dir does not exist yet, copy it over so users keep their lessons.
 // RSI_LEGACY_DIR env overrides the legacy location (for testing).
 function migrateLegacyDir(target) {
-  const legacy = (process.env.RSI_LEGACY_DIR && process.env.RSI_LEGACY_DIR.trim()) || path.join('E:\\', 'DSH', '.rsi-memory');
   try {
+    // Priority 1: migrate from the double-.dsh path (bug in defaultDir ≤0.2.7 where
+    // DSH_HOME already ending in ".dsh" got another ".dsh" appended). This path has
+    // the most recent data if the plugin ran with DSH_HOME set.
+    const home = (process.env.DSH_HOME && process.env.DSH_HOME.trim()) || os.homedir();
+    const doubleDsh = path.join(home, '.dsh', '.dsh', 'rsi-memory');
+    if (fs.existsSync(doubleDsh) && !fs.existsSync(target)) {
+      if (path.resolve(doubleDsh).toLowerCase() !== path.resolve(target).toLowerCase()) {
+        fs.cpSync(doubleDsh, target, { recursive: true, force: false, errorOnExist: false });
+      }
+    }
+    // Priority 2: migrate from the pre-0.1.12 hardcoded E:\DSH\.rsi-memory default.
+    const legacy = (process.env.RSI_LEGACY_DIR && process.env.RSI_LEGACY_DIR.trim()) || path.join('E:\\', 'DSH', '.rsi-memory');
     if (!fs.existsSync(legacy) || fs.existsSync(target)) return;
     if (path.resolve(legacy).toLowerCase() === path.resolve(target).toLowerCase()) return;
     fs.cpSync(legacy, target, { recursive: true, force: false, errorOnExist: false });

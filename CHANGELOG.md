@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2026-10-15
+
+### Fixed
+
+- **CRITICAL: double-.dsh path bug in `defaultDir()`** (`index.js`): when `DSH_HOME` is set
+  (as it is on all DSH installs, typically `C:\Users\X\.dsh`), the old code did
+  `path.join(DSH_HOME, '.dsh', 'rsi-memory')`, producing `C:\Users\X\.dsh\.dsh\rsi-memory`
+  — a double `.dsh` nesting. The store was silently created at the wrong path, invisible
+  to the user and to any tool that looks in the standard `~/.dsh/rsi-memory` location.
+  Fix: detect when the home dir already ends with `.dsh` and use it directly as the base.
+
+- **Migration from double-.dsh path**: `migrateLegacyDir()` now checks for the old
+  double-.dsh path first and copies it to the correct location, preserving all 614+
+  captured lessons. Falls through to the E:\DSH\.rsi-memory legacy migration if the
+  double-.dsh path doesn't exist.
+
+### Changed
+
+- `defaultDir()` resolution: `DSH_HOME` (if it already ends in `.dsh`) → direct child
+  `rsi-memory/`. If `DSH_HOME` doesn't end in `.dsh`, append `.dsh/rsi-memory` as before.
+  This matches how DSH's own host.js resolves its data directory.
+
 ## [0.2.7] - 2026-10-15
 
 ### Fixed
