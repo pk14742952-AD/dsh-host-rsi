@@ -1,6 +1,6 @@
 {
   "name": "dsh-host-rsi",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "memory",
     "local-llm"
   ],
-  "description": "Model-agnostic DSH host plugin for continual self-improvement: per-use self-check, trusted-lesson capture, project-aware instruction dedupe, critic escalation, coding-loop convergence steering, a five-state delivery guard, and inverted-index memory retrieval. Works with any model DSH can run; defaults tuned for local 27B/Flash and API models.",
+  "description": "Reflective self-evolution plugin tuned for local Qwen3.8 27B/3.8 Flash and online APIs: fixes the runaway deep-thinking (雷霆大思考) of Qwen3.8 27B/Flash to accelerate convergence and cut thinking time; extensive monitoring and repairs for stuck states and infinite loops; mostly general-purpose compatible with online APIs. Per-use continual self-improvement with counter-reason self-checks, critic escalation, inverted-index memory retrieval, coding-loop convergence steering, and a five-state delivery guard.",
   "author": "pk14742952-AD <192967623+pk14742952-AD@users.noreply.github.com>",
   "repository": {
     "type": "git",

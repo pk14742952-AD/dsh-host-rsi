@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-10-18
+
+### Changed
+
+- **Plugin description repositioned to its actual target and field-proven behaviors**
+  (`package.json` description, marketplace yml `description.zh`/`en`, README opening):
+  the public description now states up front that this plugin is tuned for local
+  **Qwen3.8 27B / 3.8 Flash** and online APIs, and calls out the four things it
+  actually does for those models:
+  1. **Fixes Qwen3.8 27B/Flash 雷霆大思考 (runaway deep-thinking / repeated
+     re-verification)** — the coding-loop convergence steerer
+     (`lib/convergence.js`, sliding-window repeated-pass detection) accelerates
+     convergence and cuts thinking time. This capability has shipped since 0.2.0;
+     the description now says so explicitly.
+  2. **Stuck-state and infinite-loop monitoring & repair** — the five-state
+     delivery guard (`lib/guard.js`: EMPTY / TRUNCATED / FIXED_POINT / SAME_PLAN
+     / SHELL_LOOP) detects and corrects stuck turns via `agent.followup`; the
+     instance-level final-chance ultimatum (0.2.6) rescues budget-burned empty
+     deliveries. Shipped since 0.2.0; now stated explicitly.
+  3. **Online-API general compatibility** — model-agnostic host logic, defaults
+     tuned for local 27B/Flash but usable with API/cloud models by adjusting
+     injection budgets. Documented since 0.1.9; now stated explicitly.
+  4. Per-use continual self-improvement with counter-reason self-checks, critic
+     escalation, inverted-index memory retrieval, coding-loop convergence
+     steering, and a five-state delivery guard (unchanged).
+
+- **No code behavior change in this release.** All issue fixes from 0.2.7–0.2.9
+  remain in effect. 0.3.0 is a minor-version bump reflecting the public-facing
+  repositioning of the plugin's stated target (Qwen3.8 overthinking convergence)
+  as a headline capability rather than a footnote. The underlying convergence and
+  guard implementations are unchanged and still pass the full test suite.
+
+### Verified (no regressions)
+
+- `lib/policy.js` `SYSTEM_BOILERPLATE_RE` present (issue #1 fix intact).
+- `lib/` has no `slice(0,160)` durable-rule truncation (issue #2 fix intact).
+- `lib/interrogate.js` `buildSelfCheckInstruction` exempts structured output
+  from the `[VERIFY:]` trailer (issue #3/#4 fix intact, v0.2.9).
+- All 4 GitHub issues + PR #2 remain closed; `open_issues_count: 0`.
+
 ## [0.2.9] - 2026-10-15
 
 ### Fixed
