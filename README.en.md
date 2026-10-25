@@ -6,8 +6,8 @@
 
 **A host-side plugin that makes local LLMs "get better with use" — no more death loops**
 
-[![Version](https://img.shields.io/badge/version-v0.2.2-2F81F7)](https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.2.2)
-[![Tests](https://img.shields.io/badge/tests-138%20passing-2E7D32)](https://github.com/pk14742952-AD/dsh-host-rsi)
+[![Version](https://img.shields.io/badge/version-v0.3.0-2F81F7)](https://github.com/pk14742952-AD/dsh-host-rsi/releases/tag/v0.3.0)
+[![Tests](https://img.shields.io/badge/tests-148%20passing-2E7D32)](https://github.com/pk14742952-AD/dsh-host-rsi)
 [![License](https://img.shields.io/badge/license-MIT-7B1FA2)](./LICENSE)
 
 </div>

@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { openStore } from './lib/store.js';
 import { buildSelfCheckInstruction, criticPrompt } from './lib/interrogate.js';
 import { captureFromContext, captureUserCorrection, captureUserInstruction } from './lib/capture.js';
@@ -179,6 +180,24 @@ function normalize(config = {}) {
       models: config.convergence?.models === undefined ? d.convergence.models : normalizeModels(config.convergence.models),
     },
     guard: merge(d.guard, config.guard),
+  };
+}
+
+// Build an *identified* user-role notice message for `tools/post-execute`
+// `additionalContexts`. The DSH session validator (assertMessageEventShape in
+// @deepseek-ai/dsh-session) requires every persisted user/message event to carry
+// a non-empty string `id` and `role: 'user'`; a bare {content, source} object has
+// neither, so persisting it corrupts the stored session ("lacks an identified
+// message"). Every DSH core plugin uses createUserMessage() from @deepseek-ai/dsh-llm
+// (which brands a randomUUID as the id); this host plugin is dependency-free, so we
+// mint an equivalent id here with crypto.randomUUID(). The validator only requires
+// a non-empty string id, so this is fully compatible.
+function createNoticeMessage(content, source) {
+  return {
+    id: randomUUID(),
+    role: 'user',
+    content,
+    source,
   };
 }
 
@@ -1063,10 +1082,10 @@ export function apply(ctx, config = {}) {
         runtime.convergence.steers += 1;
         if (steer === STRONG_STEER) runtime.convergence.strong += 1;
         else if (steer === SOFT_STEER) runtime.convergence.soft += 1;
-        const context = {
-          content: [{ type: 'text', text: steer }],
-          source: { kind: 'dsh-host-rsi', form: 'notice', summary: 'convergence' },
-        };
+        const context = createNoticeMessage(
+          [{ type: 'text', text: steer }],
+          { kind: 'dsh-host-rsi', form: 'notice', summary: 'convergence' },
+        );
         return {
           ...downstream,
           additionalContexts: [context, ...(downstream?.additionalContexts ?? [])],

@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Stored sessions no longer corrupt on convergence steering (critical).**
+  The `tools/post-execute` convergence steer (`index.js`) built the
+  `additionalContexts` entry as a bare `{ content, source }` object with no `id`
+  and no `role`. When the host persisted that context as a `user/message`
+  session event, the DSH session validator
+  (`assertMessageEventShape` in `@deepseek-ai/dsh-session`) rejected it with
+  *"session event at seq N lacks an identified message"*, marking the whole
+  stored session corrupt and making it impossible to reopen. Every core DSH
+  plugin uses `createUserMessage()` from `@deepseek-ai/dsh-llm`, which brands a
+  `randomUUID()` as the message `id` and sets `role: 'user'`; this dependency-free
+  host plugin now mints an equivalent identified user-role notice via
+  `createNoticeMessage()` (`crypto.randomUUID()` + `role: 'user'`), so the
+  steer context satisfies the validator's `id`/`role`/`source.kind`/`content[]`
+  invariants. Added regression assertions in `test/index.smoke.test.js`
+  (both the 27b and Flash steer paths) that the produced context carries a
+  non-empty string `id` and `role: 'user'`. Full suite (148 tests) green.
+
 ## [0.3.0] - 2026-10-18
 
 ### Changed

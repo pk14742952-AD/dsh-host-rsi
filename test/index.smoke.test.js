@@ -501,6 +501,16 @@ test('convergence hooks steer shells after repeated passing checks and reset on 
   let out;
   for (let i = 0; i < 3; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
   assert.equal(out?.additionalContexts?.[0]?.content?.[0]?.text, SOFT_STEER, 'third repeated pass should soft-steer');
+  // Regression: the steer context MUST be an identified user-role message
+  // (id + role + content[] + source.kind). A bare {content, source} object
+  // corrupts the stored session on persist ("lacks an identified message").
+  const steerMsg = out?.additionalContexts?.[0];
+  assert.ok(steerMsg, 'a steer context must be produced');
+  assert.equal(typeof steerMsg.id, 'string', 'steer context must carry a non-empty string id');
+  assert.ok(steerMsg.id.length > 0, 'steer context id must be non-empty');
+  assert.equal(steerMsg.role, 'user', 'steer context must be a user-role message');
+  assert.ok(Array.isArray(steerMsg.content), 'steer context content must be an array');
+  assert.equal(steerMsg.source?.kind, 'dsh-host-rsi', 'steer context source.kind must be set');
 
   ctx.events['tools/pre-execute']({ agent, name: 'edit' }, () => {});
   out = await ctx.events['tools/post-execute'](exec, result, next);
@@ -578,6 +588,10 @@ test('convergence defaults apply to every model, including Flash/API shells', as
   let out;
   for (let i = 0; i < 3; i += 1) out = await ctx.events['tools/post-execute'](exec, result, next);
   assert.equal(out?.additionalContexts?.[0]?.content?.[0]?.text, SOFT_STEER, 'default config must steer non-27b models too');
+  // Regression: identified user-message shape on the Flash path too.
+  const steerMsg = out?.additionalContexts?.[0];
+  assert.equal(typeof steerMsg?.id, 'string', 'Flash steer must carry a string id');
+  assert.equal(steerMsg?.role, 'user', 'Flash steer must be a user-role message');
 
   cleanup();
 });
